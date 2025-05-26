@@ -8,8 +8,10 @@ from core.database import save_grille
 from LICENSE_ADMIN.license_checker import (
     is_demo_mode, get_license_info, decrement_grilles_demo
 )
-
+from core.predictions import generate_predictions  # Ajout import
+import pandas as pd  # Pour charger l'historique
 import random
+import datetime
 
 class GameTab(QWidget):
     def __init__(self):
@@ -43,6 +45,16 @@ class GameTab(QWidget):
         self.suggestion_label = QLabel()
         self.layout.addWidget(self.suggestion_label)
         self.update_suggestion_display()
+
+        # Encart Prédictions du jour
+        self.prediction_label = QLabel()
+        self.layout.addWidget(self.prediction_label)
+        self.update_prediction_display()
+
+        # Bouton pour rafraîchir les prédictions (optionnel)
+        refresh_btn = QPushButton("🔄 Rafraîchir les prédictions du jour")
+        refresh_btn.clicked.connect(self.update_prediction_display)
+        self.layout.addWidget(refresh_btn)
 
         self.setLayout(self.layout)
 
@@ -85,3 +97,19 @@ class GameTab(QWidget):
     def update_suggestion_display(self):
         suggestion = suggest_play_strategy()
         self.suggestion_label.setText(f"📈 Conseil du jour : {suggestion}")
+
+    def update_prediction_display(self):
+        """Met à jour l'encart avec les prédictions du jour."""
+        # Charger l'historique (à adapter selon ton projet)
+        try:
+            history_df = pd.read_csv("data/history.csv")  # Chemin à adapter
+        except Exception:
+            self.prediction_label.setText("❌ Impossible de charger l'historique pour les prédictions.")
+            return
+
+        predictions = generate_predictions(history_df)
+        today = datetime.date.today().strftime("%d/%m/%Y")
+        txt = f"<b>🎯 Prédictions du {today} :</b><br>"
+        for jeu, nums in predictions.items():
+            txt += f"{jeu} : {', '.join(map(str, nums))}<br>"
+        self.prediction_label.setText(txt)

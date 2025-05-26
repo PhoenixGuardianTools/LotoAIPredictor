@@ -1,6 +1,8 @@
 import datetime
+import time
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd  # Si tu veux charger l'historique ici
 from core.statistics import (
     detect_repeating_patterns,
     apply_lunar_cycle_weight,
@@ -60,11 +62,13 @@ def generate_insight_report(history_df):
     with open("daily_insight.txt", "w", encoding="utf-8") as f:
         f.write(report)
 
-# Génération du rapport à minuit chaque jour
-while True:
-    now = datetime.datetime.now()
-    if now.hour == 0 and now.minute == 0:
-        generate_insight_report(history_df)  # Historique des tirages à fournir
-        time.sleep(60)  # Empêcher plusieurs exécutions dans la même minute
-    else:
-        time.sleep(10)  # Vérification toutes les 10 secondes
+# Si tu veux garder la génération automatique, il faut charger l'historique ici :
+# Exemple :
+# history_df = pd.read_csv("data/history.csv")
+# while True:
+#     now = datetime.datetime.now()
+#     if now.hour == 0 and now.minute == 0:
+#         generate_insight_report(history_df)
+#         time.sleep(60)
+#     else:
+#         time.sleep(10)

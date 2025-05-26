@@ -1,12 +1,14 @@
 import sqlite3
 from datetime import datetime
 from pathlib import Path
+from APP.core.regles import fetch_latest_rules, validate_draw_format
 
+# Définition du chemin de la base de données
 DB_PATH = Path(__file__).resolve().parent.parent / "data" / "phoenix.db"
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 # ------------------------
-# Database initialization
+# Initialisation de la base de données
 # ------------------------
 def init_db():
     conn = sqlite3.connect(DB_PATH)
@@ -85,79 +87,81 @@ def init_db():
         )
     """)
 
+    # **Ajout des règles des jeux**
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS jeux (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nom TEXT UNIQUE,
+            numbers_range TEXT,
+            numbers_count INTEGER,
+            special_range TEXT,
+            special_count INTEGER,
+            draw_days TEXT
+        )
+    """)
+
+    # **Ajout des statistiques des jeux**
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS statistiques (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            jeu TEXT,
+            date TEXT,
+            numeros TEXT,
+            special TEXT,
+            ratio_gain REAL,
+            indice_confiance REAL
+        )
+    """)
+
+    # **Mise à jour des règles en base**
+    latest_rules = fetch_latest_rules()
+    if latest_rules:
+        for jeu, regles in latest_rules.items():
+            cur.execute("""
+                INSERT OR REPLACE INTO jeux (nom, numbers_range, numbers_count, special_range, special_count, draw_days)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (jeu, str(regles["numbers_range"]), regles["numbers_count"], str(regles["special_range"]), regles["special_count"], str(regles["draw_days"])))
+
     conn.commit()
     conn.close()
 
 # ------------------------
-# Saving and retrieval
+# Vérification des tirages existants
 # ------------------------
+def validate_latest_draws():
+    """Vérifie que les derniers tirages sont conformes aux règles en base."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
 
-def save_draw_result(jeu, date_tirage, numeros, etoiles, rangs, gains):
+    cursor.execute("SELECT jeu, date_tirage, numeros, etoiles FROM tirages ORDER BY date_tirage DESC LIMIT 10")
+    tirages = cursor.fetchall()
+
+    for jeu, date, numeros, etoiles in tirages:
+        draw = {"numbers": list(map(int, numeros.split(","))), "special": list(map(int, etoiles.split(",")))}
+        if not validate_draw_format(jeu, draw):
+            print(f"⚠️ Tirage du {date} pour {jeu} non conforme aux règles en base !")
+
+    conn.close()
+
+# ------------------------
+# Sauvegarde et récupération des statistiques
+# ------------------------
+def save_statistics(jeu, date, numeros, special, ratio_gain, indice_confiance):
+    """Enregistre les statistiques d'un tirage dans la base de données."""
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("""
-            INSERT INTO tirages (jeu, date_tirage, numeros, etoiles, rangs, gains)
+            INSERT INTO statistiques (jeu, date, numeros, special, ratio_gain, indice_confiance)
             VALUES (?, ?, ?, ?, ?, ?)
-        """, (jeu, date_tirage, numeros, etoiles, rangs, gains))
+        """, (jeu, date, numeros, special, ratio_gain, indice_confiance))
 
-def save_grille(jeu, date, grille, model_version, gain_brut=0, cout=2.5, gain_net=0, rang='NA'):
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute("""
-            INSERT INTO grilles_jouees (jeu, date, grille, model_version, gain_brut, cout, gain_net, rang)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (jeu, date, grille, model_version, gain_brut, cout, gain_net, rang))
-
-def save_favorite(jeu, grille):
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute("""
-            INSERT INTO favoris (jeu, grille) VALUES (?, ?)
-        """, (jeu, grille))
-
-def save_manual_grid(jeu, grille, date=None):
-    if not date:
-        date = datetime.now().strftime("%Y-%m-%d")
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute("""
-            INSERT INTO grilles_jouees (jeu, date, grille, model_version)
-            VALUES (?, ?, ?, ?)
-        """, (jeu, date, grille, "manual"))
-
-def get_draw_results(jeu):
+def get_statistics(jeu):
+    """Récupère les statistiques des 10 dernières années pour un jeu donné."""
     with sqlite3.connect(DB_PATH) as conn:
         rows = conn.execute("""
-            SELECT date_tirage, numeros, etoiles FROM tirages
+            SELECT date, numeros, special, ratio_gain, indice_confiance
+            FROM statistiques
             WHERE jeu = ?
-            ORDER BY date_tirage DESC
+            ORDER BY date DESC
+            LIMIT 100
         """, (jeu,))
         return rows.fetchall()
-
-def get_all_favorites():
-    with sqlite3.connect(DB_PATH) as conn:
-        rows = conn.execute("SELECT jeu, grille FROM favoris")
-        return rows.fetchall()
-
-def get_user_stats():
-    with sqlite3.connect(DB_PATH) as conn:
-        rows = conn.execute("""
-            SELECT jeu, COUNT(*), SUM(gain_brut), SUM(cout), SUM(gain_net)
-            FROM grilles_jouees
-            GROUP BY jeu
-        """)
-        return rows.fetchall()
-
-def get_latest_draw_date(jeu):
-    with sqlite3.connect(DB_PATH) as conn:
-        result = conn.execute("""
-            SELECT MAX(date_tirage) FROM tirages WHERE jeu = ?
-        """, (jeu,)).fetchone()
-        return result[0] if result else None
-
-def get_recent_draws(limit=365):
-    with sqlite3.connect(DB_PATH) as conn:
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT jeu, date_tirage, numeros, etoiles
-            FROM tirages
-            ORDER BY date_tirage DESC
-            LIMIT ?
-        """, (limit,))
-        return cursor.fetchall()

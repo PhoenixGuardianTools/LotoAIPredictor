@@ -1,42 +1,77 @@
 import datetime
 import numpy as np
-from core.statistics import (
-    detect_long_term_cycles,
-    get_frequent_numbers,
-    detect_anomalies,
-    evaluate_periodic_trends,
-    markov_trend_prediction
-)
+from database import init_db, get_statistics
+from regles import JEUX_REGLES
 
-def generate_predictions(history_df):
+def get_next_draw_dates():
+    """Détermine les prochaines dates de tirage pour chaque jeu."""
+    today = datetime.datetime.today()
+    next_draws = {}
+
+    for game, rules in JEUX_REGLES.items():
+        for i in range(1, 8):  
+            future_date = today + datetime.timedelta(days=i)
+            if future_date.strftime("%A") in rules["draw_days"]:
+                next_draws[game] = future_date.strftime("%d %B %Y")
+                break
+
+    return next_draws
+
+def calculate_predicted_gains(game, predicted_numbers, predicted_special):
+    """Calcule les gains estimés en comparant les prédictions aux statistiques des 10 dernières années."""
+    past_statistics = get_statistics(game)
+    best_match = 0
+    best_special_match = 0
+    best_ratio = 0
+    best_confidence = 0
+
+    for stat in past_statistics:
+        stat_numbers = list(map(int, stat[1].split(",")))
+        stat_special = list(map(int, stat[2].split(",")))
+        ratio_gain = stat[3]
+        indice_confiance = stat[4]
+
+        common_numbers = len(set(predicted_numbers) & set(stat_numbers))
+        common_special = len(set(predicted_special) & set(stat_special))
+
+        if common_numbers > best_match or (common_numbers == best_match and common_special > best_special_match):
+            best_match = common_numbers
+            best_special_match = common_special
+            best_ratio = ratio_gain
+            best_confidence = indice_confiance
+
+    # Estimation des gains en fonction des correspondances statistiques
+    gain_estimate = best_ratio * 1000000 if best_match == JEUX_REGLES[game]["numbers_count"] else best_ratio * 50000  
+    rank = "1er" if best_confidence > 0.9 else ("2e" if best_match >= JEUX_REGLES[game]["numbers_count"] - 1 else "3e")
+
+    return round(gain_estimate, 2), rank, round(best_ratio, 2), round(best_confidence, 2)
+
+def generate_predictions():
     """Génère des prévisions basées sur les tendances et probabilités des prochains tirages."""
-    now = datetime.datetime.now()
-    
-    # Analyse statistique avancée
-    frequent_nums, _ = get_frequent_numbers(history_df)
-    anomalies = detect_anomalies(history_df)
-    periodic_trends = evaluate_periodic_trends(history_df)
-    long_term_cycles = detect_long_term_cycles(history_df)
-    markov_predictions = markov_trend_prediction(history_df)
+    init_db()  
+    next_draws = get_next_draw_dates()
 
-    # Sélection des numéros optimisés
-    top_numbers = sorted(frequent_nums[:6])  # Les numéros les plus présents
-    cycle_numbers = sorted(long_term_cycles.keys()[:6])  # Numéros influencés par les cycles longs
-    anomaly_numbers = sorted(anomalies.keys()[:6])  # Numéros ayant des irrégularités détectées
-    markov_numbers = sorted(markov_predictions.keys()[:6])  # Prédictions de tendances
+    predictions = {}
+    for game, rules in JEUX_REGLES.items():
+        numbers = sorted(np.random.choice(range(rules["numbers_range"][0], rules["numbers_range"][1] + 1), rules["numbers_count"], replace=False))
+        special = sorted(np.random.choice(range(rules["special_range"][0], rules["special_range"][1] + 1), rules["special_count"], replace=False))
 
-    # Génération des grilles
-    predictions = {
-        "EuroDreams": sorted(set(top_numbers + cycle_numbers)),
-        "Euromillions": sorted(set(cycle_numbers + markov_numbers)),
-        "Loto": sorted(set(anomaly_numbers + periodic_trends.keys()[:6]))
-    }
+        gain_estimate, rank, ratio_gain, indice_confiance = calculate_predicted_gains(game, numbers, special)
+
+        predictions[game] = {
+            "draw_date": next_draws[game],
+            "numbers": numbers,
+            "special": special,
+            "estimated_gain": gain_estimate,
+            "rank": rank,
+            "ratio_gain": ratio_gain,
+            "indice_confiance": indice_confiance
+        }
 
     return predictions
 
-# Exécution des prévisions
 if __name__ == "__main__":
-    predictions = generate_predictions(history_df)
+    predictions = generate_predictions()
     print("\n📊 **Prévisions pour les prochains tirages** 📊")
-    for game, numbers in predictions.items():
-        print(f"{game} : {numbers}")
+    for game, details in predictions.items():
+        print(f"{game} ({details['draw_date']}) : {details}")
