@@ -150,3 +150,14 @@ def get_latest_draw_date(jeu):
             SELECT MAX(date_tirage) FROM tirages WHERE jeu = ?
         """, (jeu,)).fetchone()
         return result[0] if result else None
+
+def get_recent_draws(limit=365):
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT jeu, date_tirage, numeros, etoiles
+            FROM tirages
+            ORDER BY date_tirage DESC
+            LIMIT ?
+        """, (limit,))
+        return cursor.fetchall()
