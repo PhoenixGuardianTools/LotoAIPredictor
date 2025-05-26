@@ -1,0 +1,10 @@
+pandas
+matplotlib
+openpyxl
+xlsxwriter
+cryptography
+schedule
+pyqt6
+requests
+pyotp
+flask

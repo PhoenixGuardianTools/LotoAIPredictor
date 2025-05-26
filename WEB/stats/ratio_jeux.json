@@ -1,0 +1,5 @@
+[
+  { "jeu": "loto", "tests": 30000, "gains": 1530, "couts": 6000, "net": -4470 },
+  { "jeu": "euromillion", "tests": 30000, "gains": 2200, "couts": 7500, "net": -5300 },
+  { "jeu": "eurodream", "tests": 30000, "gains": 2600, "couts": 9000, "net": -6400 }
+]
