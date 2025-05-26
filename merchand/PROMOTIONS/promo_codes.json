@@ -1,0 +1,25 @@
+{
+  "codes": [
+    {
+      "code": "DCCD5B74",
+      "event": "F\u00eate des M\u00e8res",
+      "discount": 15,
+      "end_date": "2025-05-28T20:59:43.248220",
+      "is_active": true
+    },
+    {
+      "code": "506CE3A0",
+      "event": "F\u00eate des M\u00e8res",
+      "discount": 15,
+      "end_date": "2025-05-28T21:02:17.267665",
+      "is_active": true
+    },
+    {
+      "code": "283EB49E",
+      "event": "F\u00eate des M\u00e8res",
+      "discount": 15,
+      "end_date": "2025-05-28T21:02:50.165116",
+      "is_active": true
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "smtp_server": "smtp.office365.com",
+  "smtp_port": 587,
+  "username": "contact@phonxproject.onmicrosoft.com",
+  "password": "",
+  "from_email": "contact@phonxproject.onmicrosoft.com",
+  "from_name": "PhoenixProject"
+}
