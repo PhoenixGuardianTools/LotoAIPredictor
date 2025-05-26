@@ -1,8 +1,8 @@
 from ui.gui import launch_app
 from core.database import init_db
 from core.scheduler import launch_in_background
-from core.license_watcher import check_expiration_alert
-from core.feedback_uploader import send_feedback
+from APP.LICENSE_ADMIN.license_watcher import check_expiration_alert
+from core.predictions import generate_predictions
 from core.visualization_report import generate_daily_insights
 import time
 import threading
@@ -25,7 +25,6 @@ def main():
     init_db()
     check_expiration_alert()
     launch_in_background()
-    send_feedback()
 
     # Lancement du suivi automatique de la visualisation à 9h
     threading.Thread(target=schedule_visualization, daemon=True).start()
