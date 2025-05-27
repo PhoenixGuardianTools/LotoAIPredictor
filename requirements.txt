@@ -28,3 +28,4 @@ piwin32
 sqlite3
 selenium>=4.0.0
 webdriver-manager>=3.8.0
+ntplib>=0.4.0
