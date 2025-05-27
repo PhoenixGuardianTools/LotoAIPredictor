@@ -100,5 +100,23 @@ GAMES = {
     'LOTO': LOTO_RULES,
     'EUROMILLIONS': EUROMILLIONS_RULES,
     'KENO': KENO_RULES,
-    'EURODREAMS': EURODREAMS_RULES
+    'EURODREAMS': EURODREAMS_RULES,
+    "Keno": {
+        "numbers": {
+            "main": {"count": "2 à 10", "max": 70},
+        },
+        "draw_days": ["Tous les jours (midi et soir)"],
+        "price": "1€ à 10€ (option multiplicateur double la mise)",
+        "multiplicateur": True,
+        "joker_plus": True,
+        "jackpot_max": "2 000 000€ cash ou 100 000€/an à vie",
+        "special": [
+            "20 numéros tirés au sort parmi 70",
+            "Option Multiplicateur : x2, x3 ou x5 (mise doublée)",
+            "Joker+ : 7 numéros générés automatiquement, gain jusqu'à 500 000€",
+            "Plafond : une même combinaison (8, 9 ou 10 numéros) ne peut pas être jouée plus de 35 fois par tirage",
+            "Gains à vie pour 9 ou 10 numéros cochés (voir règlement FDJ)",
+            "Tirages tous les jours à 13h05 et 20h05"
+        ]
+    }
 }

@@ -8,11 +8,8 @@ cryptography
 schedule>=1.1.0
 pyotp
 flask
-tk
 numpy
-matplotlib
 scikit-learn
-ephem
 stripe>=12.1.0
 wmi>=1.5.1
 paypalrestsdk>=1.13.1
@@ -21,11 +18,9 @@ jinja2>=3.1.2
 pdfkit==1.0.0
 reportlab>=4.0.0
 Pillow>=10.0.0
-qrcode>=7.4.0
-reportlab>=4.0.0
-cryptography>=41.0.0
-piwin32
-sqlite3
+pywin32
 selenium>=4.0.0
 webdriver-manager>=3.8.0
 ntplib>=0.4.0
+openai>=1.0.0
+wheel

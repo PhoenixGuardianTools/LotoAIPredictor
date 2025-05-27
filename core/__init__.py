@@ -1,3 +1,3 @@
 """
-Module core pour la gestion des données FDJ.
+Package core contenant les fonctionnalités de base de l'application.
 """

@@ -1,6 +1,12 @@
 import sys
 import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import tkinter as tk
+from tkinter import ttk
+
+# Ajouter le répertoire racine au PYTHONPATH
+current_dir = os.path.dirname(os.path.abspath(__file__))
+root_dir = os.path.dirname(current_dir)
+sys.path.insert(0, root_dir)
 
 from core.fdj_data_manager import FDJDataManager
 
