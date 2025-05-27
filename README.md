@@ -1,4 +1,6 @@
-# LotoAI Predictor
+# Loto AI Predictor
+
+## Version 1.0.0
 
 ## Description
 LotoAI Predictor est un logiciel d'aide à la prédiction pour les jeux de loterie, utilisant l'intelligence artificielle pour analyser les tendances et générer des prédictions. Notre solution combine analyse statistique avancée et algorithmes d'apprentissage automatique pour vous offrir les meilleures chances de succès.
@@ -12,35 +14,46 @@ LotoAI Predictor est un logiciel d'aide à la prédiction pour les jeux de loter
 
 ## Structure du projet
 ```
-LotoAI Predictor/
-├── WEB/                    # Interface web et assets
+LotoAIPredictor/
+├── WEB/                   # Interface web et assets
 │   ├── assets/            # Images, CSS et ressources
 │   ├── stats/             # Statistiques et données
 │   └── index.html         # Page d'accueil
-├── build/                 # Fichiers de build
-└── README.md             # Documentation
+├── builds/                # Fichiers de build
+└── README.md              # Documentation
 ```
 
 ## Tarification
 
-### Version Démo
-- Accès limité aux fonctionnalités de base
-- 5 prédictions par jour
-- Statistiques basiques
-- Gratuit
+## Version Demo
+- Accès complet pendant 7 jours
+- Limité à 10 grilles prédites
+- 10% de réduction la première année si vous achetez entre le 5e et le 7e jour de démo
 
-### Version Standard
-- Toutes les fonctionnalités de base
-- 50 prédictions par jour
-- Analyses statistiques complètes
-- 29.99€/mois
+### Version Semaine
+- Accès complet à toutes les fonctionnalités
+- 1 semaine d'utilisation
+- **9,99 €**
 
-### Version Premium
-- Toutes les fonctionnalités avancées
-- Prédictions illimitées
-- Analyses statistiques avancées
-- Support prioritaire
-- 49.99€/mois
+### Version Mois
+- Accès complet à toutes les fonctionnalités
+- 1 mois d'utilisation
+- **29,99 €**
+
+### Version 3 Mois
+- Accès complet à toutes les fonctionnalités
+- 3 mois d'utilisation
+- **59,99 €**
+
+### Version 6 Mois
+- Accès complet à toutes les fonctionnalités
+- 6 mois d'utilisation
+- **99,99 €**
+
+### Version Année
+- Accès complet à toutes les fonctionnalités
+- 1 an d'utilisation
+- **149,99 €**
 
 ## Achat et Support
 
