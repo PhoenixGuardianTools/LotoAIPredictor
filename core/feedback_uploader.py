@@ -1,6 +1,6 @@
 import smtplib
 from email.mime.text import MIMEText
-from utils.encryption import decrypt_ini
+from core.encryption import decrypt_ini
 
 def send_feedback(message, subject="Feedback utilisateur"):
     """

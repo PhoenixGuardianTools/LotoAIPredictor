@@ -3,7 +3,7 @@ import time
 import threading
 from datetime import datetime
 from core.insights import check_draw_results, display_morning_predictions, collect_anonymous_feedback
-from core.database import init_db, validate_latest_draws
+from core.database import init_db, validate_latest_draws, update_fdj_data
 
 def launch_in_background():
     """Lance le scheduler en arrière-plan."""
@@ -21,6 +21,14 @@ def launch_in_background():
         schedule.every(6).hours.do(init_db)
         schedule.every(6).hours.do(validate_latest_draws)
         
+        # Mise à jour FDJ tous les jours de la semaine (lundi à samedi) à 00:01
+        schedule.every().monday.at("00:01").do(update_fdj_data)
+        schedule.every().tuesday.at("00:01").do(update_fdj_data)
+        schedule.every().wednesday.at("00:01").do(update_fdj_data)
+        schedule.every().thursday.at("00:01").do(update_fdj_data)
+        schedule.every().friday.at("00:01").do(update_fdj_data)
+        schedule.every().saturday.at("00:01").do(update_fdj_data)
+        
         while True:
             schedule.run_pending()
             time.sleep(60)
@@ -28,3 +36,5 @@ def launch_in_background():
     # Lancement du scheduler dans un thread séparé
     scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
     scheduler_thread.start()
+    print("📅 Scheduler démarré avec succès")
+    return scheduler_thread

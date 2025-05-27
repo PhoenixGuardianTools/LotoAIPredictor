@@ -2,7 +2,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from core.predictor import set_active_model
 from utils.smtp_handler import test_smtp_connection
-from utils.encryption import update_config_admin, decrypt_ini
+from core.encryption import update_config_admin, decrypt_ini
 import smtplib
 from email.mime.text import MIMEText
 from subprocess import run

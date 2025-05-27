@@ -43,3 +43,62 @@ def validate_draw_format(game, draw):
     special_valid = all(rules["special_range"][0] <= s <= rules["special_range"][1] for s in draw["special"])
 
     return numbers_valid and special_valid
+
+"""
+Règles des jeux FDJ
+"""
+
+LOTO_RULES = {
+    'name': 'LOTO',
+    'numbers': {
+        'main': {'count': 5, 'min': 1, 'max': 90},
+        'chance': {'count': 1, 'min': 1, 'max': 10}
+    },
+    'price': 2.20,
+    'draw_days': ['Lundi', 'Mercredi', 'Samedi'],
+    'jackpot_min': 2000000,
+    'url': 'https://www.fdj.fr/jeux-de-tirage/loto/historique'
+}
+
+EUROMILLIONS_RULES = {
+    'name': 'EUROMILLIONS',
+    'numbers': {
+        'main': {'count': 5, 'min': 1, 'max': 50},
+        'stars': {'count': 2, 'min': 1, 'max': 12}
+    },
+    'price': 2.50,
+    'draw_days': ['Mardi', 'Vendredi'],
+    'jackpot_min': 17000000,
+    'url': 'https://www.fdj.fr/jeux-de-tirage/euromillions-my-million/historique'
+}
+
+KENO_RULES = {
+    'name': 'KENO',
+    'numbers': {
+        'main': {'count': 10, 'min': 1, 'max': 70}
+    },
+    'price': 2.00,
+    'draw_days': ['Tous les jours'],
+    'jackpot_max': 200000,
+    'url': 'https://www.fdj.fr/jeux-de-tirage/keno/historique'
+}
+
+EURODREAMS_RULES = {
+    'name': 'EURODREAMS',
+    'numbers': {
+        'main': {'count': 6, 'min': 1, 'max': 40},
+        'dream': {'count': 1, 'min': 1, 'max': 5}
+    },
+    'price': 2.50,
+    'draw_days': ['Lundi', 'Jeudi'],
+    'jackpot_min': 20000000,
+    'url': 'https://www.fdj.fr/jeux-de-tirage/eurodreams/historique'
+}
+
+# Dictionnaire de tous les jeux disponibles
+GAMES = {
+    'LOTO': LOTO_RULES,
+    'EUROMILLIONS': EUROMILLIONS_RULES,
+    'KENO': KENO_RULES,
+    'EURODREAMS': EURODREAMS_RULES
+}

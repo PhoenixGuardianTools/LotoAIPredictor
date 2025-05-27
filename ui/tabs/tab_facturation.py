@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
-from utils.facture import generer_facture
-from utils.encryption import decrypt_ini
+from merchand.facture import generer_facture
+from core.encryption import decrypt_ini
 import datetime
 
 class FacturationTab(tk.Frame):

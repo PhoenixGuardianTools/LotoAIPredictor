@@ -1,6 +1,6 @@
 import tkinter as tk
 from tkinter import messagebox
-from utils.encryption import update_config_secure
+from core.encryption import update_config_secure
 
 class ConfigTab(tk.Frame):
     def __init__(self, master=None):

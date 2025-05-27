@@ -9,33 +9,63 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.application import MIMEApplication
+import configparser
+from core.encryption import encrypt_config, decrypt_config
+from core.export import export_to_pdf
 
 class InvoiceGenerator:
     def __init__(self):
         self.templates_dir = Path("merchand/templates")
         self.output_dir = Path("merchand/output")
-        self.company_info = {
-            "name": "PhoenixProject",
-            "address": "123 Rue de la Chance",
-            "city": "75000 Paris",
-            "country": "France",
-            "email": "contact@phonxproject.onmicrosoft.com",
-            "phone": "+33 1 23 45 67 89",
-            "siret": "123 456 789 00000",
-            "tva": "FR12345678900"
-        }
+        self.config_file = Path("config/society_config.ini")
+        self.encrypted_config_file = Path("config/society_config.enc")
         
         # Créer les dossiers s'ils n'existent pas
         self.templates_dir.mkdir(parents=True, exist_ok=True)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         
+        # Charger la configuration
+        self.company_info = self._load_company_config()
+        
+    def _load_company_config(self) -> Dict:
+        """Charge la configuration de la société."""
+        try:
+            if self.encrypted_config_file.exists():
+                # Charger et déchiffrer la configuration
+                with open(self.encrypted_config_file, 'r') as f:
+                    encrypted_data = json.load(f)
+                config_data = decrypt_config(encrypted_data, "society_key")
+                
+                # Convertir en dictionnaire
+                config = configparser.ConfigParser()
+                config.read_string(config_data)
+                return dict(config['Company'])
+            else:
+                # Charger la configuration en clair
+                config = configparser.ConfigParser()
+                config.read(self.config_file)
+                return dict(config['Company'])
+        except Exception as e:
+            print(f"⚠️ Erreur lors du chargement de la configuration : {e}")
+            return {
+                "name": "PhoenixProject",
+                "address": "17 F RUE GUSTAVE NADAUD",
+                "city": "69007 LYON",
+                "country": "France",
+                "email": "contact@phonxproject.onmicrosoft.com",
+                "phone": "+33 6 77 37 61 96",
+                "siret": "",
+                "tva": "Non applicable",
+                "logo_path": "WEB/assets/Logo_LotoAIPredictor.png"
+            }
+    
     def generate_invoice(self, invoice_data: Dict) -> str:
         """Génère une facture au format PDF."""
         try:
             # Calculer les totaux
             subtotal = sum(item['quantity'] * item['unit_price'] for item in invoice_data['items'])
-            vat = subtotal * 0.20  # TVA 20%
-            total = subtotal + vat
+            vat = 0  # TVA non applicable par défaut
+            total = subtotal
             
             # Générer le QR code pour le paiement
             qr = qrcode.QRCode(version=1, box_size=10, border=5)
@@ -45,30 +75,28 @@ class InvoiceGenerator:
             qr_path = self.output_dir / f"qr_{invoice_data['invoice_number']}.png"
             qr_img.save(qr_path)
             
-            # Préparer les données pour le template
-            template_data = {
-                "invoice": {
-                    "number": invoice_data['invoice_number'],
-                    "date": invoice_data['date'],
-                    "due_date": invoice_data['due_date']
-                },
+            # Construire le rapport pour export_to_pdf
+            report = {
+                "type": "invoice",
+                "objet": "Facture",
+                "invoice_number": invoice_data['invoice_number'],
+                "date": invoice_data['date'],
+                "due_date": invoice_data['due_date'],
                 "client": invoice_data['client'],
                 "items": invoice_data['items'],
                 "subtotal": subtotal,
                 "vat": vat,
                 "total": total,
                 "company": self.company_info,
-                "qr_code": str(qr_path)
+                "qr_code": str(qr_path),
+                "logo_path": self.company_info['logo_path'],
+                "payment_method": invoice_data.get('payment_method', ''),
+                "payment_link": invoice_data.get('payment_link', ''),
+                "date_objet": "date_achat"
             }
             
-            # Rendre le template HTML
-            env = Environment(loader=FileSystemLoader(self.templates_dir))
-            template = env.get_template('invoice.html')
-            html_content = template.render(**template_data)
-            
-            # Générer le PDF
             pdf_path = self.output_dir / f"invoice_{invoice_data['invoice_number']}.pdf"
-            pdfkit.from_string(html_content, str(pdf_path))
+            export_to_pdf(report, report_type="invoice", output_path=str(pdf_path))
             
             # Envoyer la facture par email
             self._send_invoice_email(invoice_data['client']['email'], pdf_path)
@@ -76,7 +104,9 @@ class InvoiceGenerator:
             return str(pdf_path)
             
         except Exception as e:
+            import traceback
             print(f"⚠️ Erreur lors de la génération de la facture : {e}")
+            traceback.print_exc()
             return None
             
     def _send_invoice_email(self, to_email: str, pdf_path: Path):
@@ -85,15 +115,15 @@ class InvoiceGenerator:
             msg = MIMEMultipart()
             msg['From'] = self.company_info['email']
             msg['To'] = to_email
-            msg['Subject'] = "Votre facture PhoenixProject"
+            msg['Subject'] = f"Votre facture {self.company_info['name']}"
             
-            body = """
+            body = f"""
             Bonjour,
             
             Veuillez trouver ci-joint votre facture.
             
             Cordialement,
-            L'équipe PhoenixProject
+            L'équipe {self.company_info['name']}
             """
             msg.attach(MIMEText(body, 'plain'))
             

@@ -1,6 +1,6 @@
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
-from utils.encryption import update_config_admin, decrypt_ini
+from core.encryption import update_config_admin, decrypt_ini
 
 class EnterpriseTab(tk.Frame):
     def __init__(self, master=None):

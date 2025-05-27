@@ -1,6 +1,6 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
-from utils.encryption import decrypt_ini
+from core.encryption import decrypt_ini
 from email.mime.text import MIMEText
 import smtplib
 

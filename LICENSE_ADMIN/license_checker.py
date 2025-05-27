@@ -5,17 +5,27 @@ import uuid
 import hashlib
 import json
 import sqlite3
-from utils.encryption import decrypt_ini, update_config_secure
 import os
+import sys
+
+# Ajouter le répertoire parent au PYTHONPATH
+current_dir = Path(__file__).parent
+parent_dir = current_dir.parent
+sys.path.append(str(parent_dir))
+
+from core.encryption import decrypt_ini, update_config_secure
 
 # Chemins des fichiers
-CONFIG_PATH = "SECURITY/config_admin.ini.enc"
-DB_PATH = Path(__file__).resolve().parent.parent / "data" / "phoenix.db"
-LICENSE_PATH = "LICENSE_ADMIN/license.key.enc"
-FERNET_KEY_FILE = "fernet.key"
-ALERT_LOG_FILE = "LICENSE_ADMIN/alert_sent.log"
-PROMO_PATH = "PROMOTIONS/promo_templates.json"
-BANDEAU_PATH = "PROMOTIONS/bandeau_default.json"
+BASE_DIR = Path(__file__).resolve().parent.parent
+CONFIG_PATH = BASE_DIR / "SECURITY" / "config_admin.ini.enc"
+DB_PATH = BASE_DIR / "data" / "phoenix.db"
+LICENSE_PATH = BASE_DIR / "SECURITY" / "license_PhoenixProject.key.enc"
+PROMO_PATH = BASE_DIR / "PROMOTIONS" / "promo_templates.json"
+BANDEAU_PATH = BASE_DIR / "PROMOTIONS" / "bandeau_default.json"
+ALERT_LOG_FILE = BASE_DIR / "LICENSE_ADMIN" / "alert_sent.log"
+
+#Licence
+FERNET_KEY_FILE = BASE_DIR / "SECURITY" / "fernet.key"
 
 # Configuration email
 RECIPIENT = "phoenix38@riseup.net"
@@ -95,18 +105,68 @@ def check_expiration_alert():
     except Exception as e:
         print(f"[✗] Erreur dans le contrôle de licence : {e}")
 
+def get_config():
+    """Récupère la configuration depuis le fichier encrypté."""
+    try:
+        return decrypt_ini(CONFIG_PATH)
+    except Exception as e:
+        print(f"⚠️ Erreur lors de la lecture de la configuration : {e}")
+        return {}
+
+def get_license_info():
+    """Retourne les informations de la licence."""
+    try:
+        config = get_config()
+        return {
+            'type': config.get('LICENSE', {}).get('type', 'demo'),
+            'expiration': config.get('LICENSE', {}).get('expiration', 'N/A'),
+            'jours_restants': 999999,  # Valeur fixe pour la licence illimitée
+            'grilles_restantes': int(config.get('LICENSE', {}).get('grilles_restantes', 0))
+        }
+    except Exception as e:
+        print(f"⚠️ Erreur lors de la récupération des infos de licence : {e}")
+        return {
+            'type': 'demo',
+            'expiration': 'N/A',
+            'jours_restants': 0,
+            'grilles_restantes': 0
+        }
+
+def is_admin_license():
+    """Vérifie si l'utilisateur a une licence admin valide."""
+    try:
+        config = get_config()
+        return config.get('LICENSE', {}).get('type') == 'unlimited' and config.get('LICENSE', {}).get('status') == 'active'
+    except Exception as e:
+        print(f"⚠️ Erreur lors de la vérification de la licence admin : {e}")
+        return False
+
 def get_machine_uuid():
     """
     Génère un UUID unique pour la machine basé sur les caractéristiques matérielles.
+    Pour la licence admin, retourne l'UUID stocké dans la configuration.
     """
-    system_info = {
-        'platform': platform.system(),
-        'machine': platform.machine(),
-        'processor': platform.processor(),
-        'node': platform.node()
-    }
-    unique_string = str(system_info)
-    return str(uuid.uuid5(uuid.NAMESPACE_DNS, unique_string))
+    try:
+        config = get_config()
+        return config.get('LICENSE', {}).get('uuid', 'default-uuid')
+    except Exception as e:
+        print(f"⚠️ Erreur lors de la récupération de l'UUID : {e}")
+        return 'default-uuid'
+
+def get_email_config():
+    """Récupère la configuration email depuis le fichier encrypté."""
+    try:
+        config = get_config()
+        return {
+            'recipient': config.get('EMAIL', {}).get('recipient'),
+            'sender': config.get('EMAIL', {}).get('sender'),
+            'smtp_server': config.get('EMAIL', {}).get('smtp_server'),
+            'port': config.get('EMAIL', {}).get('port'),
+            'password': config.get('EMAIL', {}).get('password')
+        }
+    except Exception as e:
+        print(f"⚠️ Erreur lors de la récupération de la config email : {e}")
+        return {}
 
 def get_license_data():
     """Récupère les données de licence admin."""
@@ -115,21 +175,9 @@ def get_license_data():
     except Exception:
         return {}
 
-def is_admin_license():
-    """Vérifie si l'utilisateur a une licence admin valide."""
-    data = get_license_data()
-    if data.get("type", "").lower() != "admin":
-        return False
-        
-    # Vérification de la date d'expiration
-    exp_str = data.get("expiration")
-    if not exp_str:
-        return False
-    try:
-        exp_date = datetime.datetime.strptime(exp_str, "%Y-%m-%d")
-        return exp_date >= datetime.datetime.today()
-    except:
-        return False
+def get_license_path():
+    """Retourne le chemin de la licence admin."""
+    return Path(__file__).resolve().parent.parent / "SECURITY" / "license_PhoenixProject.key.enc"
 
 def check_client_license():
     """
@@ -173,10 +221,7 @@ def check_client_license():
 
 def is_demo_mode():
     """Vérifie si l'application est en mode démo."""
-    if is_admin_license():
-        return False
-    has_license, _ = check_client_license()
-    return not has_license
+    return not is_admin_license()
 
 def get_days_remaining():
     """Calcule le nombre de jours restants avant expiration."""
@@ -195,14 +240,15 @@ def get_days_remaining():
         return 0
 
 def should_show_reminder():
-    """Détermine si un rappel doit être affiché."""
-    days_left = get_days_remaining()
-    return days_left in [30, 7, 2]
+    """Vérifie si un rappel de licence doit être affiché."""
+    info = get_license_info()
+    if info['type'] == 'demo':
+        return True
+    return info['jours_restants'] <= 7
 
 def should_show_promo():
-    """Détermine si une promotion doit être affichée."""
-    days_left = get_days_remaining()
-    return days_left == 2  # 48h avant expiration
+    """Vérifie si une promotion doit être affichée."""
+    return is_demo_mode()
 
 def get_promo_bandeau():
     """Récupère le bandeau de promotion."""
@@ -219,42 +265,6 @@ def get_promo_bandeau():
             "color": "#FF4500",
             "background": "#FFF5E5"
         }
-    }
-
-def get_license_info():
-    """Récupère les informations complètes de la licence."""
-    if is_admin_license():
-        data = get_license_data()
-        return {
-            "type": "admin",
-            "expiration": data.get("expiration", "illimitée"),
-            "status": "active",
-            "email": data.get("email", ""),
-            "promo_active": should_show_promo(),
-            "promo_bandeau": get_promo_bandeau(),
-            "jours_restants": get_days_remaining()
-        }
-        
-    has_license, license_info = check_client_license()
-    if has_license:
-        return {
-            "type": license_info['type'],
-            "expiration": license_info['expiration'],
-            "status": license_info['status'],
-            "email": "",
-            "promo_active": should_show_promo(),
-            "promo_bandeau": get_promo_bandeau(),
-            "jours_restants": get_days_remaining()
-        }
-        
-    return {
-        "type": "demo",
-        "expiration": "non définie",
-        "status": "inactive",
-        "email": "",
-        "promo_active": should_show_promo(),
-        "promo_bandeau": get_promo_bandeau(),
-        "jours_restants": 0
     }
 
 def get_user_permissions():
@@ -301,7 +311,7 @@ def decrement_grilles_demo():
             remaining = 0
         data["grilles"] = str(remaining)
 
-        from utils.encryption import update_config_secure
+        from core.encryption import update_config_secure
         update_config_secure(data)
 
 def load_promo_data():

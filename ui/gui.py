@@ -14,6 +14,7 @@ from ui.tabs.tab_admin import AdminTab
 from ui.tabs.tab_userguide import UserGuideTab
 from ui.tabs.tab_support import SupportTab
 from ui.tabs.tab_enterprise import EnterpriseTab
+from ui.tabs.tab_accueil import AccueilTab
 
 from LICENSE_ADMIN.license_checker import (
     is_admin_license,
@@ -27,11 +28,14 @@ class LotoAIPredictorGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("LotoAI Predictor")
-        self.root.geometry("1200x800")
+        self.root.geometry("1024x768")
         
-        # Création des onglets
-        self.notebook = ttk.Notebook(root)
-        self.notebook.pack(expand=True, fill='both', padx=10, pady=5)
+        # Création du notebook pour les onglets
+        self.notebook = ttk.Notebook(self.root)
+        self.notebook.pack(fill="both", expand=True)
+        
+        # Configuration de la fermeture de la fenêtre
+        self.root.protocol("WM_DELETE_WINDOW", self.quit_application)
         
         # Onglet Prédictions
         self.predictions_tab = ttk.Frame(self.notebook)
@@ -183,44 +187,34 @@ class LotoAIPredictorGUI:
         except ValueError:
             messagebox.showerror("Erreur", "Format invalide. Utilisez des nombres séparés par des virgules.")
 
-class AboutTab(tk.Frame):
-    def __init__(self, master=None):
-        super().__init__(master)
-        self.pack(fill="both", expand=True)
-
-        info = get_license_info()
-
-        tk.Label(self, text="🧠 Logiciel : LotoAiPredictor", anchor="w", justify="left").pack(fill="x", padx=5, pady=2)
-        tk.Label(self, text=f"🔐 Type de licence : {info['type']}", anchor="w", justify="left").pack(fill="x", padx=5, pady=2)
-        tk.Label(self, text=f"📅 Expiration : {info['expiration']}", anchor="w", justify="left").pack(fill="x", padx=5, pady=2)
-        tk.Label(self, text=f"⏳ Jours restants : {info['jours_restants']}", anchor="w", justify="left").pack(fill="x", padx=5, pady=2)
-
-        if info['type'] == "demo":
-            tk.Label(self, text=f"🎟️ Grilles restantes : {info['grilles_restantes']}", anchor="w", justify="left").pack(fill="x", padx=5, pady=2)
-
-        # Ajout du bouton Quitter
-        quit_button = tk.Button(self, text="Quitter", command=self.quit_application)
-        quit_button.pack(pady=10)
-
     def quit_application(self):
         """Ferme proprement l'application."""
-        self.master.destroy()
+        self.root.quit()
+        self.root.destroy()
 
 def launch_app(permissions=None):
-    """Lance l'application."""
+    """Lance l'application avec les permissions spécifiées."""
     root = tk.Tk()
     app = LotoAIPredictorGUI(root)
     
+    # Ajout de l'onglet Accueil
+    app.notebook.add(AccueilTab(app.notebook), text='Accueil')
+    
     # Ajout des onglets selon les permissions
-    if permissions and permissions.get('is_admin'):
-        app.notebook.add(AdminTab(app.notebook), text='Admin')
-        app.notebook.add(EnterpriseTab(app.notebook), text='Entreprise')
+    if permissions:
+        if permissions.get('is_admin'):
+            app.notebook.add(AdminTab(app.notebook), text='Admin')
+            app.notebook.add(EnterpriseTab(app.notebook), text='Entreprise')
+        elif permissions.get('is_client'):
+            # Onglets pour les clients
+            pass
+        else:
+            # Mode démo - onglets limités
+            pass
     
     # Onglets communs
     app.notebook.add(SupportTab(app.notebook), text='Support')
     app.notebook.add(UserGuideTab(app.notebook), text='Guide')
-    
-    # Configuration de la fermeture propre lors du clic sur la X
-    root.protocol("WM_DELETE_WINDOW", root.destroy)
+    app.notebook.add(AboutTab(app.notebook), text='À propos')
     
     root.mainloop()

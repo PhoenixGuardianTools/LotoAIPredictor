@@ -13,6 +13,10 @@ from core.encryption import decrypt_ini
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from bs4 import BeautifulSoup
+import zipfile  
+import shutil   
+import tempfile 
 
 # Définition du chemin de la base de données
 DB_PATH = Path(__file__).resolve().parent.parent / "data" / "phoenix.db"
@@ -167,7 +171,7 @@ def init_db():
     print("🔄 Vérification des données FDJ...")
     if not check_data_freshness():
         print("📥 Données non à jour, lancement de la mise à jour initiale...")
-        success = download_fdj_data_with_retry()
+        success = download_fdj_data()
         notify_update_status(success, is_initial=True)
     else:
         print("✅ Données à jour")
@@ -1118,212 +1122,468 @@ def notify_update_status(success, is_initial=False, error_message=None):
     except Exception as e:
         print(f"⚠️ Erreur lors de l'envoi de la notification : {e}")
 
-def download_fdj_data_with_retry(max_retries=3, delay=60):
+def download_fdj_data():
     """
-    Télécharge les données avec système de retry.
+    Pour chaque jeu FDJ :
+    - Tente de télécharger et d'intégrer les fichiers ZIP/CSV historiques.
+    - Si impossible, scrappe le dernier tirage depuis la page web.
+    - Met à jour la base de données uniquement avec les nouveaux tirages.
     """
-    for attempt in range(max_retries):
-        try:
-            if download_fdj_data():
-                return True
-                
-            if attempt < max_retries - 1:
-                print(f"🔄 Tentative {attempt + 1}/{max_retries} échouée. Nouvelle tentative dans {delay} secondes...")
-                time.sleep(delay)
-                
-        except Exception as e:
-            print(f"⚠️ Erreur lors de la tentative {attempt + 1} : {e}")
-            if attempt < max_retries - 1:
-                time.sleep(delay)
-                
-    return False
-
-def get_fdj_special_draws():
-    """
-    Récupère les tirages spéciaux depuis le fichier CSV de la FDJ.
-    Retourne une liste des tirages spéciaux avec leurs dates et descriptions.
-    """
-    import pandas as pd
     from pathlib import Path
-    from datetime import datetime
+    import pandas as pd
+    import requests
+    import zipfile
+    import shutil
+    import os
+    from bs4 import BeautifulSoup
+    import configparser
+    import tempfile
+    from .regles import GAMES
+
+    # Lecture de la configuration
+    config = configparser.ConfigParser()
+    config_path = Path(__file__).resolve().parent.parent / "config" / "config.ini"
+    config.read(config_path)
+
+    data_dir = Path(__file__).resolve().parent.parent / "data" / "fdj"
+    data_dir.mkdir(parents=True, exist_ok=True)
+
+    results = {}
+
+    for game_name, game_rules in GAMES.items():
+        print(f"\n📥 Traitement de {game_name}...")
+        url = config['FDJ'].get(f'{game_name.upper()}_URL', None)
+        if not url:
+            print(f"❌ Pas d'URL trouvée pour {game_name}")
+            results[game_name] = -1
+            continue
+        try:
+            # Détection du type d'URL
+            if url.endswith('.zip') or url.endswith('.csv'):
+                # Téléchargement du fichier
+                r = requests.get(url, stream=True)
+                r.raise_for_status()
+                with tempfile.TemporaryDirectory() as tmpdir:
+                    tmpdir = Path(tmpdir)
+                    local_file = tmpdir / url.split('/')[-1]
+                    with open(local_file, 'wb') as f:
+                        shutil.copyfileobj(r.raw, f)
+                    # Si ZIP, extraction
+                    if str(local_file).endswith('.zip'):
+                        with zipfile.ZipFile(local_file, 'r') as zip_ref:
+                            zip_ref.extractall(tmpdir)
+                        csv_files = list(tmpdir.glob('*.csv'))
+                    else:
+                        csv_files = [local_file]
+                    # Fusion des CSV
+                    all_data = []
+                    for csvf in csv_files:
+                        try:
+                            df = pd.read_csv(csvf, sep=';', engine='python')
+                            all_data.append(df)
+                        except Exception as e:
+                            print(f"⚠️ Erreur lecture {csvf}: {e}")
+                    if all_data:
+                        df_all = pd.concat(all_data, ignore_index=True)
+                        # Standardisation des colonnes selon le jeu
+                        if game_name == 'LOTO':
+                            df_all = df_all.rename(columns={
+                                'date_de_tirage': 'date',
+                                'boule_1': 'n1',
+                                'boule_2': 'n2',
+                                'boule_3': 'n3',
+                                'boule_4': 'n4',
+                                'boule_5': 'n5',
+                                'numero_chance': 'chance'
+                            })
+                            df_all['numbers'] = df_all[['n1', 'n2', 'n3', 'n4', 'n5']].values.tolist()
+                            df_all['special'] = df_all['chance'].apply(lambda x: [x])
+                        elif game_name == 'EUROMILLIONS':
+                            df_all = df_all.rename(columns={
+                                'date_de_tirage': 'date',
+                                'boule_1': 'n1',
+                                'boule_2': 'n2',
+                                'boule_3': 'n3',
+                                'boule_4': 'n4',
+                                'boule_5': 'n5',
+                                'etoile_1': 'e1',
+                                'etoile_2': 'e2'
+                            })
+                            df_all['numbers'] = df_all[['n1', 'n2', 'n3', 'n4', 'n5']].values.tolist()
+                            df_all['special'] = df_all[['e1', 'e2']].values.tolist()
+                        elif game_name == 'EURODREAMS':
+                            df_all = df_all.rename(columns={
+                                'date_de_tirage': 'date',
+                                'boule_1': 'n1',
+                                'boule_2': 'n2',
+                                'boule_3': 'n3',
+                                'boule_4': 'n4',
+                                'boule_5': 'n5',
+                                'boule_6': 'n6',
+                                'numero_dream': 'dream'
+                            })
+                            df_all['numbers'] = df_all[['n1', 'n2', 'n3', 'n4', 'n5', 'n6']].values.tolist()
+                            df_all['special'] = df_all['dream'].apply(lambda x: [x])
+                        elif game_name == 'KENO':
+                            df_all = df_all.rename(columns={
+                                'date_de_tirage': 'date',
+                                'numero_1': 'n1',
+                                'numero_2': 'n2',
+                                'numero_3': 'n3',
+                                'numero_4': 'n4',
+                                'numero_5': 'n5',
+                                'numero_6': 'n6',
+                                'numero_7': 'n7',
+                                'numero_8': 'n8',
+                                'numero_9': 'n9',
+                                'numero_10': 'n10'
+                            })
+                            df_all['numbers'] = df_all[[f'n{i}' for i in range(1, 11)]].values.tolist()
+                            df_all['special'] = [[]] * len(df_all)
+                        # Conversion des dates
+                        if 'date' not in df_all.columns and 'date_de_tirage' in df_all.columns:
+                            df_all = df_all.rename(columns={'date_de_tirage': 'date'})
+                        df_all['date'] = pd.to_datetime(df_all['date'])
+                        df_all = df_all.sort_values('date')
+                        # Sauvegarde dans le CSV compilé
+                        csv_path = data_dir / f"{game_name.lower()}_tirages.csv"
+                        df_all.to_csv(csv_path, sep=';', index=False)
+                        # Mise à jour de la base de données (comme avant)
+                        with sqlite3.connect(DB_PATH) as conn:
+                            cursor = conn.cursor()
+                            cursor.execute("SELECT MAX(date_tirage) FROM tirages WHERE jeu = ?", (game_name,))
+                            last_date = cursor.fetchone()[0]
+                            if last_date:
+                                last_date = datetime.strptime(last_date, '%Y-%m-%d')
+                                new_draws = df_all[df_all['date'] > last_date]
+                            else:
+                                new_draws = df_all
+                            for _, row in new_draws.iterrows():
+                                cursor.execute("""
+                                    INSERT INTO tirages (jeu, date_tirage, numeros, etoiles)
+                                    VALUES (?, ?, ?, ?)
+                                """, (
+                                    game_name,
+                                    row['date'].strftime('%Y-%m-%d'),
+                                    ','.join(map(str, row['numbers'])),
+                                    ','.join(map(str, row['special']))
+                                ))
+                            conn.commit()
+                        results[game_name] = len(new_draws)
+                        print(f"✅ {len(new_draws)} nouveaux tirages ajoutés pour {game_name}")
+                    else:
+                        print(f"⚠️ Aucun CSV exploitable pour {game_name}")
+                        results[game_name] = 0
+            else:
+                # Fallback scraping
+                print(f"🌐 Scraping pour {game_name}...")
+                r = requests.get(url)
+                r.raise_for_status()
+                soup = BeautifulSoup(r.text, 'html.parser')
+                
+                # Extraction selon le jeu
+                numbers = []
+                special = []
+                date = datetime.now()
+                
+                if game_name == 'LOTO':
+                    print(f"\n🔍 Analyse de la page pour {game_name}...")
+                    # Recherche de la section du dernier tirage
+                    tirage_section = soup.find('div', {'class': 'loto-result'})
+                    if not tirage_section:
+                        print("Recherche avec 'loto-resultat'...")
+                        tirage_section = soup.find('div', {'class': 'loto-resultat'})
+                    if not tirage_section:
+                        print("Recherche avec 'resultat-loto'...")
+                        tirage_section = soup.find('div', {'class': 'resultat-loto'})
+                    
+                    if tirage_section:
+                        print("Section trouvée, recherche des numéros...")
+                        # Extraction des numéros principaux
+                        number_elements = tirage_section.find_all('div', {'class': ['number', 'boule', 'numero']})
+                        if not number_elements:
+                            print("Recherche des numéros dans les spans...")
+                            number_elements = tirage_section.find_all('span', {'class': ['number', 'boule', 'numero']})
+                        
+                        print(f"Éléments trouvés : {len(number_elements)}")
+                        if number_elements:
+                            print(f"Classes trouvées : {[elem.get('class', []) for elem in number_elements]}")
+                            print(f"Textes trouvés : {[elem.text.strip() for elem in number_elements]}")
+                        
+                        numbers = [int(num.text.strip()) for num in number_elements[:5]]
+                        print(f"Numéros extraits : {numbers}")
+                        
+                        # Extraction du numéro chance
+                        chance_element = tirage_section.find('div', {'class': ['chance', 'numero-chance']})
+                        if not chance_element:
+                            print("Recherche du numéro chance dans les spans...")
+                            chance_element = tirage_section.find('span', {'class': ['chance', 'numero-chance']})
+                        
+                        if chance_element:
+                            print(f"Numéro chance trouvé : {chance_element.text.strip()}")
+                            special = [int(chance_element.text.strip())]
+                        else:
+                            print("❌ Numéro chance non trouvé")
+                            special = []
+                        
+                        # Extraction de la date
+                        date_element = tirage_section.find('div', {'class': ['date', 'date-tirage']})
+                        if not date_element:
+                            print("Recherche de la date dans les spans...")
+                            date_element = tirage_section.find('span', {'class': ['date', 'date-tirage']})
+                        
+                        if date_element:
+                            date_str = date_element.text.strip()
+                            print(f"Date trouvée : {date_str}")
+                            try:
+                                date = datetime.strptime(date_str, '%d/%m/%Y')
+                            except ValueError:
+                                try:
+                                    date = datetime.strptime(date_str, '%Y-%m-%d')
+                                except ValueError:
+                                    print(f"⚠️ Format de date non reconnu : {date_str}")
+                    else:
+                        print("❌ Section de tirage non trouvée")
+                        print("Contenu de la page :")
+                        print(soup.prettify()[:1000])  # Affiche les 1000 premiers caractères
+                
+                elif game_name == 'EUROMILLIONS':
+                    # Recherche de la section du dernier tirage
+                    tirage_section = soup.find('div', {'class': 'euromillions-result'})
+                    if not tirage_section:
+                        tirage_section = soup.find('div', {'class': 'euromillions-resultat'})
+                    if not tirage_section:
+                        tirage_section = soup.find('div', {'class': 'resultat-euromillions'})
+                    
+                    if tirage_section:
+                        # Extraction des numéros principaux
+                        number_elements = tirage_section.find_all('div', {'class': ['number', 'boule', 'numero']})
+                        if not number_elements:
+                            number_elements = tirage_section.find_all('span', {'class': ['number', 'boule', 'numero']})
+                        numbers = [int(num.text.strip()) for num in number_elements[:5]]
+                        
+                        # Extraction des étoiles
+                        star_elements = tirage_section.find_all('div', {'class': ['star', 'etoile']})
+                        if not star_elements:
+                            star_elements = tirage_section.find_all('span', {'class': ['star', 'etoile']})
+                        special = [int(star.text.strip()) for star in star_elements[:2]]
+                        
+                        # Extraction de la date
+                        date_element = tirage_section.find('div', {'class': ['date', 'date-tirage']})
+                        if not date_element:
+                            date_element = tirage_section.find('span', {'class': ['date', 'date-tirage']})
+                        if date_element:
+                            date_str = date_element.text.strip()
+                            try:
+                                date = datetime.strptime(date_str, '%d/%m/%Y')
+                            except ValueError:
+                                try:
+                                    date = datetime.strptime(date_str, '%Y-%m-%d')
+                                except ValueError:
+                                    print(f"⚠️ Format de date non reconnu pour {game_name}: {date_str}")
+                
+                elif game_name == 'EURODREAMS':
+                    # Recherche de la section du dernier tirage
+                    tirage_section = soup.find('div', {'class': 'eurodreams-result'})
+                    if not tirage_section:
+                        tirage_section = soup.find('div', {'class': 'eurodreams-resultat'})
+                    if not tirage_section:
+                        tirage_section = soup.find('div', {'class': 'resultat-eurodreams'})
+                    
+                    if tirage_section:
+                        # Extraction des numéros principaux
+                        number_elements = tirage_section.find_all('div', {'class': ['number', 'boule', 'numero']})
+                        if not number_elements:
+                            number_elements = tirage_section.find_all('span', {'class': ['number', 'boule', 'numero']})
+                        numbers = [int(num.text.strip()) for num in number_elements[:6]]
+                        
+                        # Extraction du numéro Dream
+                        dream_element = tirage_section.find('div', {'class': ['dream', 'numero-dream']})
+                        if not dream_element:
+                            dream_element = tirage_section.find('span', {'class': ['dream', 'numero-dream']})
+                        if dream_element:
+                            special = [int(dream_element.text.strip())]
+                        
+                        # Extraction de la date
+                        date_element = tirage_section.find('div', {'class': ['date', 'date-tirage']})
+                        if not date_element:
+                            date_element = tirage_section.find('span', {'class': ['date', 'date-tirage']})
+                        if date_element:
+                            date_str = date_element.text.strip()
+                            try:
+                                date = datetime.strptime(date_str, '%d/%m/%Y')
+                            except ValueError:
+                                try:
+                                    date = datetime.strptime(date_str, '%Y-%m-%d')
+                                except ValueError:
+                                    print(f"⚠️ Format de date non reconnu pour {game_name}: {date_str}")
+                
+                elif game_name == 'KENO':
+                    # Recherche de la section du dernier tirage
+                    tirage_section = soup.find('div', {'class': 'keno-result'})
+                    if not tirage_section:
+                        tirage_section = soup.find('div', {'class': 'keno-resultat'})
+                    if not tirage_section:
+                        tirage_section = soup.find('div', {'class': 'resultat-keno'})
+                    
+                    if tirage_section:
+                        # Extraction des 10 numéros
+                        number_elements = tirage_section.find_all('div', {'class': ['number', 'boule', 'numero']})
+                        if not number_elements:
+                            number_elements = tirage_section.find_all('span', {'class': ['number', 'boule', 'numero']})
+                        numbers = [int(num.text.strip()) for num in number_elements[:10]]
+                        
+                        # Le Keno n'a pas de numéro spécial
+                        special = []
+                        
+                        # Extraction de la date
+                        date_element = tirage_section.find('div', {'class': ['date', 'date-tirage']})
+                        if not date_element:
+                            date_element = tirage_section.find('span', {'class': ['date', 'date-tirage']})
+                        if date_element:
+                            date_str = date_element.text.strip()
+                            try:
+                                date = datetime.strptime(date_str, '%d/%m/%Y')
+                            except ValueError:
+                                try:
+                                    date = datetime.strptime(date_str, '%Y-%m-%d')
+                                except ValueError:
+                                    print(f"⚠️ Format de date non reconnu pour {game_name}: {date_str}")
+                
+                # Vérification que nous avons bien tous les numéros requis
+                if not numbers or len(numbers) != GAMES[game_name]['numbers_count']:
+                    print(f"⚠️ Nombre de numéros incorrect pour {game_name}")
+                    results[game_name] = -1
+                    continue
+                
+                if game_name != 'KENO' and (not special or len(special) != GAMES[game_name]['special_count']):
+                    print(f"⚠️ Nombre de numéros spéciaux incorrect pour {game_name}")
+                    results[game_name] = -1
+                    continue
+                
+                # Mise à jour de la base de données si nouveau tirage
+                with sqlite3.connect(DB_PATH) as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT MAX(date_tirage) FROM tirages WHERE jeu = ?", (game_name,))
+                    last_date = cursor.fetchone()[0]
+                    
+                    if last_date:
+                        last_date = datetime.strptime(last_date, '%Y-%m-%d')
+                        if date > last_date:
+                            cursor.execute("""
+                                INSERT INTO tirages (jeu, date_tirage, numeros, etoiles)
+                                VALUES (?, ?, ?, ?)
+                            """, (
+                                game_name,
+                                date.strftime('%Y-%m-%d'),
+                                ','.join(map(str, numbers)),
+                                ','.join(map(str, special))
+                            ))
+                            conn.commit()
+                            results[game_name] = 1
+                            print(f"✅ Nouveau tirage scrappé pour {game_name}")
+                        else:
+                            print(f"ℹ️ Pas de nouveau tirage pour {game_name}")
+                            results[game_name] = 0
+                    else:
+                        cursor.execute("""
+                            INSERT INTO tirages (jeu, date_tirage, numeros, etoiles)
+                            VALUES (?, ?, ?, ?)
+                        """, (
+                            game_name,
+                            date.strftime('%Y-%m-%d'),
+                            ','.join(map(str, numbers)),
+                            ','.join(map(str, special))
+                        ))
+                        conn.commit()
+                        results[game_name] = 1
+                        print(f"✅ Premier tirage scrappé pour {game_name}")
+        except Exception as e:
+            print(f"❌ Erreur lors du traitement de {game_name}: {str(e)}")
+            results[game_name] = -1
+    return all(results.values()) > 0
+
+def is_data_fresh():
+    """
+    Vérifie si les données de tous les jeux sont à jour.
+    Retourne True si toutes les données sont fraîches, False sinon.
+    """
+    from pathlib import Path
+    from datetime import datetime, timedelta
+    from .regles import GAMES
+
+    data_dir = Path(__file__).resolve().parent.parent / "data" / "fdj"
+    
+    # Si le dossier n'existe pas, les données ne sont pas fraîches
+    if not data_dir.exists():
+        return False
+    
+    # Vérification pour chaque jeu
+    for game_name in GAMES.keys():
+        csv_path = data_dir / f"{game_name.lower()}_tirages.csv"
+        
+        # Si le fichier n'existe pas, les données ne sont pas fraîches
+        if not csv_path.exists():
+            return False
+            
+        # Vérification de la date de dernière modification
+        last_modified = datetime.fromtimestamp(csv_path.stat().st_mtime)
+        now = datetime.now()
+        
+        # Si les données ont plus de 24h, elles ne sont plus fraîches
+        if (now - last_modified).total_seconds() > 86400:  # 24h en secondes
+            return False
+    
+    return True
+
+def update_rules():
+    """
+    Met à jour les règles des jeux dans la base de données.
+    """
+    from .regles import GAMES
     
     try:
-        # Chemin vers le fichier CSV
-        csv_path = Path(__file__).resolve().parent.parent / "data" / "loto_tirages.csv"
-        
-        # Si le fichier n'existe pas, on essaie de le télécharger
-        if not csv_path.exists():
-            print("📥 Téléchargement des données de la FDJ...")
-            if not download_fdj_data():
-                return []
-        
-        # Lecture du fichier CSV
-        df = pd.read_csv(csv_path, sep=';')
-        
-        # Conversion des dates
-        df['date'] = pd.to_datetime(df['date'])
-        
-        # Filtrage des tirages spéciaux (ceux avec un jackpot supérieur à la moyenne)
-        mean_jackpot = df['jackpot'].mean()
-        special_draws = df[df['jackpot'] > mean_jackpot * 1.5].copy()
-        
-        # Formatage des données
-        formatted_draws = []
-        for _, row in special_draws.iterrows():
-            formatted_draws.append({
-                'date': row['date'].strftime('%Y-%m-%d'),
-                'name': f"Tirage spécial - Jackpot de {row['jackpot']:,.0f}€",
-                'description': f"Tirage avec un jackpot exceptionnel de {row['jackpot']:,.0f}€",
-                'jackpot': row['jackpot'],
-                'type': 'special'
-            })
-        
-        return formatted_draws
-        
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+            
+            for jeu, regles in GAMES.items():
+                cursor.execute("""
+                    INSERT OR REPLACE INTO jeux (
+                        nom, 
+                        numbers_range, 
+                        numbers_count, 
+                        special_range, 
+                        special_count, 
+                        draw_days
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                """, (
+                    jeu,
+                    str(regles["numbers_range"]),
+                    regles["numbers_count"],
+                    str(regles["special_range"]),
+                    regles["special_count"],
+                    str(regles["draw_days"])
+                ))
+            
+            conn.commit()
+            print("✅ Règles des jeux mises à jour avec succès")
+            return True
+            
     except Exception as e:
-        print(f"⚠️ Erreur lors de la lecture des tirages spéciaux : {e}")
-        return []
-
-def get_special_days():
-    """
-    Récupère la liste des jours spéciaux en combinant les données de la FDJ
-    et les jours fériés français.
-    """
-    # Récupération des tirages spéciaux depuis la FDJ
-    fdj_special_draws = get_fdj_special_draws()
-    
-    # Liste des jours fériés français
-    holidays = [
-        {
-            'date': '2024-01-01',
-            'name': 'Jour de l\'An',
-            'description': 'Tirage spécial du Nouvel An'
-        },
-        {
-            'date': '2024-05-01',
-            'name': 'Fête du Travail',
-            'description': 'Tirage spécial pour la Fête du Travail'
-        },
-        {
-            'date': '2024-07-14',
-            'name': 'Fête Nationale',
-            'description': 'Tirage spécial du 14 Juillet'
-        },
-        {
-            'date': '2024-08-15',
-            'name': 'Assomption',
-            'description': 'Tirage estival spécial'
-        },
-        {
-            'date': '2024-11-11',
-            'name': 'Armistice',
-            'description': 'Tirage commémoratif'
-        },
-        {
-            'date': '2024-12-25',
-            'name': 'Noël',
-            'description': 'Tirage de Noël'
-        }
-    ]
-    
-    # Combinaison des tirages spéciaux FDJ et des jours fériés
-    all_special_days = fdj_special_draws + holidays
-    
-    # Tri par date
-    all_special_days.sort(key=lambda x: x['date'])
-    
-    return all_special_days
-
-def get_game_stats(game_name):
-    """Récupère les statistiques d'un jeu."""
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    
-    # Récupérer les statistiques de base
-    cursor.execute("""
-        SELECT 
-            COUNT(*) as total_tirages,
-            SUM(gain_brut) as total_gains_bruts,
-            SUM(cout_investi) as total_cout_investi,
-            AVG(gain_brut) as moyenne_gains,
-            MAX(gain_brut) as meilleur_gain,
-            COUNT(CASE WHEN gain_brut > 0 THEN 1 END) as grilles_gagnantes
-        FROM grilles_jouees
-        WHERE jeu = ?
-    """, (game_name,))
-    
-    stats = cursor.fetchone()
-    
-    # Récupérer le gain net cumulé
-    cursor.execute("""
-        SELECT SUM(gain_brut - cout_investi) as gain_net_cumule
-        FROM grilles_jouees
-        WHERE jeu = ?
-    """, (game_name,))
-    
-    gain_net_cumule = cursor.fetchone()[0] or 0
-    
-    # Récupérer l'historique des gains
-    cursor.execute("""
-        SELECT date_tirage, gain_brut
-        FROM grilles_jouees
-        WHERE jeu = ?
-        ORDER BY date_tirage DESC
-        LIMIT 10
-    """, (game_name,))
-    
-    historique = [{'date': row[0], 'gain': row[1]} for row in cursor.fetchall()]
-    
-    conn.close()
-    
-    return {
-        'total_tirages': stats[0],
-        'total_gains_bruts': stats[1] or 0,
-        'total_cout_investi': stats[2] or 0,
-        'moyenne_gains': stats[3] or 0,
-        'meilleur_gain': stats[4] or 0,
-        'grilles_gagnantes': stats[5],
-        'gain_net_cumule': gain_net_cumule,
-        'historique': historique
-    }
-
-def get_jackpot(game_name):
-    """Récupère la cagnotte actuelle d'un jeu."""
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    
-    cursor.execute("""
-        SELECT cagnotte
-        FROM cagnottes
-        WHERE jeu = ?
-        ORDER BY date_maj DESC
-        LIMIT 1
-    """, (game_name,))
-    
-    result = cursor.fetchone()
-    conn.close()
-    
-    return result[0] if result else 0
+        print(f"❌ Erreur lors de la mise à jour des règles : {str(e)}")
+        return False
 
 def schedule_fdj_updates():
     """
     Planifie la mise à jour automatique des données FDJ.
-    Les mises à jour sont programmées tous les jours de tirage à 00:01.
+    Les mises à jour sont programmées tous les jours de la semaine (lundi à samedi) à 00:01.
     """
-    def update_fdj_data():
-        """Fonction de mise à jour des données FDJ"""
-        print(f"🕐 Vérification des données FDJ - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        
-        if not check_data_freshness():
-            print("📥 Données non à jour, lancement de la mise à jour...")
-            success = download_fdj_data_with_retry()
-            notify_update_status(success)
-        else:
-            print("✅ Données à jour")
-    
-    # Jours de tirage du Loto (lundi, mercredi et samedi)
+    # Mise à jour tous les jours de la semaine (lundi à samedi)
     schedule.every().monday.at("00:01").do(update_fdj_data)
+    schedule.every().tuesday.at("00:01").do(update_fdj_data)
     schedule.every().wednesday.at("00:01").do(update_fdj_data)
+    schedule.every().thursday.at("00:01").do(update_fdj_data)
+    schedule.every().friday.at("00:01").do(update_fdj_data)
     schedule.every().saturday.at("00:01").do(update_fdj_data)
     
     def run_scheduler():
@@ -1479,15 +1739,13 @@ def get_user_permissions():
         
     return permissions
 
-def download_fdj_data():
-    """Crée un fichier CSV vide pour les tirages FDJ s'il n'existe pas."""
-    from pathlib import Path
-    import pandas as pd
-    csv_path = Path(__file__).resolve().parent.parent / "data" / "loto_tirages.csv"
-    if not csv_path.exists():
-        print("[INFO] Création d'un fichier loto_tirages.csv vide (structure minimale).")
-        df = pd.DataFrame(columns=["date", "numbers", "special", "jackpot", "gains", "ranks"])
-        csv_path.parent.mkdir(parents=True, exist_ok=True)
-        df.to_csv(csv_path, sep=';', index=False)
-        return True
-    return True
+def update_fdj_data():
+    """
+    Met à jour les données FDJ en appelant download_fdj_data.
+    Retourne True si la mise à jour a réussi, False sinon.
+    """
+    try:
+        return download_fdj_data()
+    except Exception as e:
+        print(f"Erreur lors de la mise à jour des données FDJ : {e}")
+        return False

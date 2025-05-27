@@ -190,62 +190,179 @@ def export_to_excel(report, report_type, output_path=None):
     writer.close()
     return output_path
 
-def export_to_pdf(report, report_type, output_path=None):
+def export_to_pdf_invoice(report, output_path=None):
     """
-    Exporte un rapport au format PDF.
-    
+    Exporte une facture au format PDF.
     Args:
-        report (dict): Le rapport à exporter
-        report_type (str): Type de rapport ('daily', 'weekly', 'monthly')
+        report (dict): La facture à exporter
         output_path (str, optional): Chemin de sortie du fichier PDF
     """
     if output_path is None:
-        output_path = f"reports/pdf/{report['jeu']}_{report['date'] or report['mois']}.pdf"
-    
-    # Gérer la rotation des rapports
+        output_path = f"reports/pdf/{report['objet']}_{report['invoice_number']}.pdf"
     rotate_reports(os.path.dirname(output_path))
-    
-    # Créer le dossier de sortie si nécessaire
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     
-    # Créer le document PDF
-    doc = SimpleDocTemplate(output_path, pagesize=letter)
+    # Créer le document PDF avec un fond gris clair
+    doc = SimpleDocTemplate(
+        output_path,
+        pagesize=letter,
+        rightMargin=72,
+        leftMargin=72,
+        topMargin=72,
+        bottomMargin=72
+    )
+    
+    # Définir le style de fond gris clair
+    background_color = report.get('background_color', '#F5F5F5')
     styles = getSampleStyleSheet()
     elements = []
     
+    # Logo
+    if report.get('logo_path'):
+        try:
+            elements.append(Image(report['logo_path'], width=120, height=60))
+        except Exception:
+            pass
+    
     # Titre
-    title_style = ParagraphStyle(
-        'CustomTitle',
-        parent=styles['Heading1'],
-        fontSize=24,
-        textColor=colors.green,
-        spaceAfter=30
-    )
+    title_style = ParagraphStyle('CustomTitle', parent=styles['Heading1'], fontSize=24, textColor=colors.green, spaceAfter=30)
+    elements.append(Paragraph(f"{report['objet']} n°{report['invoice_number']}", title_style))
     
-    # Vérifier si c'est un jour spécial
-    special_day, special_desc = get_special_day_info(report['date'])
-    if special_day:
-        title_text = f"Rapport {report_type} - {report['jeu']} - {special_day}"
-    else:
-        title_text = f"Rapport {report_type} - {report['jeu']}"
+    # Dates
+    date_style = ParagraphStyle('CustomDate', parent=styles['Heading2'], fontSize=14, spaceAfter=10)
+    elements.append(Paragraph(f"Date d'achat : {report['date']}", date_style))
+    elements.append(Paragraph(f"Date d'échéance : {report['due_date']}", date_style))
+    elements.append(Spacer(1, 10))
     
-    elements.append(Paragraph(title_text, title_style))
-    
-    # Date du tirage
-    date_style = ParagraphStyle(
-        'CustomDate',
-        parent=styles['Heading2'],
-        fontSize=18,
-        spaceAfter=20
-    )
-    elements.append(Paragraph(f"Tirage de {report['jour_tirage']} {report['date']}", date_style))
-    
-    if special_day:
-        elements.append(Paragraph(special_desc, styles['Normal']))
-    
+    # Infos société
+    company = report['company']
+    societe = f"<b>{company['name']}</b><br/>{company['address']}<br/>{company['city']}<br/>{company['country']}<br/><br/>Email : {company['email']}<br/>Téléphone : {company['phone']}<br/>SIRET : {company['siret']}<br/>TVA : {company['tva']}"
+    elements.append(Paragraph(societe, styles['Normal']))
     elements.append(Spacer(1, 20))
     
-    # Résumé
+    # Infos client
+    client = report['client']
+    client_info = f"""
+    <b>Client :</b> {client['name']}<br/>
+    <b>ID Client :</b> {client['id']}<br/>
+    <b>Email :</b> {client['email']}<br/><br/>
+    <b>Adresse postale :</b><br/>
+    {client['address']}<br/>
+    {client['city']}<br/>
+    {client['country']}<br/><br/>
+    <b>Adresse de facturation :</b><br/>
+    {client['billing_address']}<br/>
+    {client['billing_city']}<br/>
+    {client['billing_country']}
+    """
+    elements.append(Paragraph(client_info, styles['Normal']))
+    elements.append(Spacer(1, 20))
+    
+    # Tableau des items
+    items_data = [['Produit', 'Quantité', 'Prix unitaire (€)', 'Total (€)']]
+    for item in report['items']:
+        items_data.append([
+            item['name'],
+            str(item['quantity']),
+            f"{item['unit_price']:.2f}",
+            f"{item['quantity'] * item['unit_price']:.2f}"
+        ])
+    items_table = Table(items_data, colWidths=[180, 60, 100, 100])
+    items_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 14),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+        ('TEXTCOLOR', (0, 1), (-1, -1), colors.black),
+        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 1), (-1, -1), 12),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black)
+    ]))
+    elements.append(items_table)
+    elements.append(Spacer(1, 10))
+    
+    # Totaux
+    total_data = [
+        ['Sous-total', f"{report['subtotal']:.2f} €"],
+        ['TVA', f"{report['vat']:.2f} €"],
+        ['Total', f"{report['total']:.2f} €"]
+    ]
+    total_table = Table(total_data, colWidths=[180, 100])
+    total_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
+        ('ALIGN', (0, 0), (-1, -1), 'RIGHT'),
+        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 0), (-1, -1), 12),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black)
+    ]))
+    elements.append(total_table)
+    elements.append(Spacer(1, 20))
+    
+    # Information de promotion
+    if report.get('promo_info'):
+        promo_style = ParagraphStyle(
+            'PromoStyle',
+            parent=styles['Normal'],
+            fontSize=12,
+            textColor=colors.red,
+            spaceAfter=10
+        )
+        elements.append(Paragraph(f"<b>{report['promo_info']}</b>", promo_style))
+    
+    # Paiement
+    if report.get('payment_method'):
+        elements.append(Paragraph(f"<b>Méthode de paiement :</b> {report['payment_method']}", styles['Normal']))
+    if report.get('payment_link'):
+        elements.append(Paragraph(f"<b>Lien de paiement :</b> {report['payment_link']}", styles['Normal']))
+    
+    # QR code
+    if report.get('qr_code'):
+        try:
+            elements.append(Image(report['qr_code'], width=100, height=100))
+        except Exception:
+            pass
+    
+    # Pied de page
+    footer_style = ParagraphStyle('CustomFooter', parent=styles['Normal'], fontSize=10, textColor=colors.grey)
+    elements.append(Paragraph(f"Facture générée le {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", footer_style))
+    
+    # Construire le PDF avec le fond gris clair
+    def add_background(canvas, doc):
+        canvas.saveState()
+        canvas.setFillColor(colors.HexColor(background_color))
+        canvas.rect(0, 0, doc.width, doc.height, fill=1)
+        canvas.restoreState()
+    
+    doc.build(elements, onFirstPage=add_background, onLaterPages=add_background)
+    return output_path
+
+def export_to_pdf_report(report, report_type, output_path=None):
+    """
+    Exporte un rapport de jeu au format PDF (ancienne logique).
+    """
+    # Ancienne fonction renommée ici (copier/coller l'ancienne logique export_to_pdf)
+    if output_path is None:
+        output_path = f"reports/pdf/{report['objet']}_{report['date'] or report['mois']}.pdf"
+    rotate_reports(os.path.dirname(output_path))
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+    doc = SimpleDocTemplate(output_path, pagesize=letter)
+    styles = getSampleStyleSheet()
+    elements = []
+    title_style = ParagraphStyle('CustomTitle', parent=styles['Heading1'], fontSize=24, textColor=colors.green, spaceAfter=30)
+    special_day, special_desc = get_special_day_info(report['date'])
+    if special_day:
+        title_text = f"Rapport {report_type} - {report['objet']} - {special_day}"
+    else:
+        title_text = f"Rapport {report_type} - {report['objet']}"
+    elements.append(Paragraph(title_text, title_style))
+    date_style = ParagraphStyle('CustomDate', parent=styles['Heading2'], fontSize=18, spaceAfter=20)
+    elements.append(Paragraph(f"{report['date_objet']} {report['date']}", date_style))
+    if special_day:
+        elements.append(Paragraph(special_desc, styles['Normal']))
+    elements.append(Spacer(1, 20))
     elements.append(Paragraph("Résumé", styles['Heading2']))
     summary_data = [
         ['Métrique', 'Valeur'],
@@ -273,8 +390,6 @@ def export_to_pdf(report, report_type, output_path=None):
     ]))
     elements.append(summary_table)
     elements.append(Spacer(1, 20))
-    
-    # Prédictions
     elements.append(Paragraph("Prédictions", styles['Heading2']))
     preds_data = [['Numéros', 'Spéciaux', 'Score', 'Confiance', 'Gain Estimé', 'Jackpot']]
     for pred in report['predictions']:
@@ -302,8 +417,6 @@ def export_to_pdf(report, report_type, output_path=None):
     ]))
     elements.append(preds_table)
     elements.append(Spacer(1, 20))
-    
-    # Gains Prédits
     elements.append(Paragraph("Gains Prédits", styles['Heading2']))
     gains_data = [['Rang', 'Gain Estimé', 'Probabilité']]
     for i in range(len(report['gains_predits']['rangs'])):
@@ -327,19 +440,167 @@ def export_to_pdf(report, report_type, output_path=None):
         ('GRID', (0, 0), (-1, -1), 1, colors.black)
     ]))
     elements.append(gains_table)
+    footer_style = ParagraphStyle('CustomFooter', parent=styles['Normal'], fontSize=10, textColor=colors.grey)
+    elements.append(Paragraph(f"Rapport généré le {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", footer_style))
+    doc.build(elements)
+    return output_path
+
+def export_to_pdf(report, report_type=None, output_path=None):
+    """
+    Fonction générique d'export PDF qui délègue selon le type de rapport.
+    """
+    if report.get('type') == 'order':
+        return export_to_pdf_order(report, output_path)
+    elif report.get('type') == 'invoice':
+        return export_to_pdf_invoice(report, output_path)
+    else:
+        return export_to_pdf_report(report, report_type, output_path)
+
+def export_to_pdf_order(report, output_path=None):
+    """
+    Exporte un bon de commande au format PDF.
+    Args:
+        report (dict): Le bon de commande à exporter
+        output_path (str, optional): Chemin de sortie du fichier PDF
+    """
+    if output_path is None:
+        output_path = f"reports/pdf/{report['objet']}_{report['order_number']}.pdf"
+    rotate_reports(os.path.dirname(output_path))
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+    
+    # Créer le document PDF avec un fond gris clair
+    doc = SimpleDocTemplate(
+        output_path,
+        pagesize=letter,
+        rightMargin=72,
+        leftMargin=72,
+        topMargin=72,
+        bottomMargin=72
+    )
+    
+    # Définir le style de fond gris clair
+    background_color = report.get('background_color', '#F5F5F5')
+    styles = getSampleStyleSheet()
+    elements = []
+    
+    # Logo
+    if report.get('logo_path'):
+        try:
+            elements.append(Image(report['logo_path'], width=120, height=60))
+        except Exception:
+            pass
+    
+    # Titre
+    title_style = ParagraphStyle('CustomTitle', parent=styles['Heading1'], fontSize=24, textColor=colors.green, spaceAfter=30)
+    elements.append(Paragraph(f"{report['objet']} n°{report['order_number']}", title_style))
+    
+    # Dates
+    date_style = ParagraphStyle('CustomDate', parent=styles['Heading2'], fontSize=14, spaceAfter=10)
+    elements.append(Paragraph(f"Date de commande : {report['date']}", date_style))
+    elements.append(Paragraph(f"Date d'échéance : {report['due_date']}", date_style))
+    elements.append(Spacer(1, 10))
+    
+    # Infos société
+    company = report['company']
+    societe = f"<b>{company['name']}</b><br/>{company['address']}<br/>{company['city']}<br/>{company['country']}<br/><br/>Email : {company['email']}<br/>Téléphone : {company['phone']}<br/>SIRET : {company['siret']}<br/>TVA : {company['tva']}"
+    elements.append(Paragraph(societe, styles['Normal']))
+    elements.append(Spacer(1, 20))
+    
+    # Infos client
+    client = report['client']
+    client_info = f"""
+    <b>Client :</b> {client['name']}<br/>
+    <b>ID Client :</b> {client['id']}<br/>
+    <b>Email :</b> {client['email']}<br/><br/>
+    <b>Adresse postale :</b><br/>
+    {client['address']}<br/>
+    {client['city']}<br/>
+    {client['country']}<br/><br/>
+    <b>Adresse de facturation :</b><br/>
+    {client['billing_address']}<br/>
+    {client['billing_city']}<br/>
+    {client['billing_country']}
+    """
+    elements.append(Paragraph(client_info, styles['Normal']))
+    elements.append(Spacer(1, 20))
+    
+    # Tableau des items
+    items_data = [['Produit', 'Quantité', 'Prix unitaire (€)', 'Total (€)']]
+    for item in report['items']:
+        items_data.append([
+            item['name'],
+            str(item['quantity']),
+            f"{item['unit_price']:.2f}",
+            f"{item['quantity'] * item['unit_price']:.2f}"
+        ])
+    items_table = Table(items_data, colWidths=[180, 60, 100, 100])
+    items_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 14),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+        ('TEXTCOLOR', (0, 1), (-1, -1), colors.black),
+        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 1), (-1, -1), 12),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black)
+    ]))
+    elements.append(items_table)
+    elements.append(Spacer(1, 10))
+    
+    # Totaux
+    total_data = [
+        ['Sous-total', f"{report['subtotal']:.2f} €"],
+        ['TVA', f"{report['vat']:.2f} €"],
+        ['Total', f"{report['total']:.2f} €"]
+    ]
+    total_table = Table(total_data, colWidths=[180, 100])
+    total_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
+        ('ALIGN', (0, 0), (-1, -1), 'RIGHT'),
+        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 0), (-1, -1), 12),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black)
+    ]))
+    elements.append(total_table)
+    elements.append(Spacer(1, 20))
+    
+    # Information de promotion
+    if report.get('promo_info'):
+        promo_style = ParagraphStyle(
+            'PromoStyle',
+            parent=styles['Normal'],
+            fontSize=12,
+            textColor=colors.red,
+            spaceAfter=10
+        )
+        elements.append(Paragraph(f"<b>{report['promo_info']}</b>", promo_style))
+    
+    # Paiement
+    if report.get('payment_method'):
+        elements.append(Paragraph(f"<b>Méthode de paiement :</b> {report['payment_method']}", styles['Normal']))
+    if report.get('payment_link'):
+        elements.append(Paragraph(f"<b>Lien de paiement :</b> {report['payment_link']}", styles['Normal']))
+    
+    # QR code
+    if report.get('qr_code'):
+        try:
+            elements.append(Image(report['qr_code'], width=100, height=100))
+        except Exception:
+            pass
     
     # Pied de page
-    footer_style = ParagraphStyle(
-        'CustomFooter',
-        parent=styles['Normal'],
-        fontSize=10,
-        textColor=colors.grey
-    )
-    elements.append(Paragraph(
-        f"Rapport généré le {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-        footer_style
-    ))
+    footer_style = ParagraphStyle('CustomFooter', parent=styles['Normal'], fontSize=10, textColor=colors.grey)
+    elements.append(Paragraph(f"Bon de commande généré le {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", footer_style))
     
-    # Construire le PDF
-    doc.build(elements)
+    # Construire le PDF avec le fond gris clair
+    def add_background(canvas, doc):
+        canvas.saveState()
+        canvas.setFillColor(colors.HexColor(background_color))
+        canvas.rect(0, 0, doc.width, doc.height, fill=1)
+        canvas.restoreState()
+    
+    doc.build(elements, onFirstPage=add_background, onLaterPages=add_background)
     return output_path 

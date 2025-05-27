@@ -1,0 +1,50 @@
+{
+    "games": [
+        {
+            "id": "loto",
+            "name": "Loto",
+            "description": "Le jeu de tirage classique",
+            "min_numbers": 5,
+            "max_numbers": 5,
+            "min_value": 1,
+            "max_value": 49,
+            "bonus": {
+                "min_numbers": 1,
+                "max_numbers": 1,
+                "min_value": 1,
+                "max_value": 10
+            },
+            "price": 2.20,
+            "draw_days": ["lundi", "mercredi", "samedi"]
+        },
+        {
+            "id": "euromillions",
+            "name": "EuroMillions",
+            "description": "Le grand jeu européen",
+            "min_numbers": 5,
+            "max_numbers": 5,
+            "min_value": 1,
+            "max_value": 50,
+            "bonus": {
+                "min_numbers": 2,
+                "max_numbers": 2,
+                "min_value": 1,
+                "max_value": 12
+            },
+            "price": 2.50,
+            "draw_days": ["mardi", "vendredi"]
+        },
+        {
+            "id": "keno",
+            "name": "Keno",
+            "description": "Le jeu rapide et simple",
+            "min_numbers": 2,
+            "max_numbers": 10,
+            "min_value": 1,
+            "max_value": 70,
+            "bonus": null,
+            "price": 1.00,
+            "draw_days": ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
+        }
+    ]
+} 

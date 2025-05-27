@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from LICENSE_ADMIN.license_checker import should_show_promo
-from utils.encryption import decrypt_ini, import_license_file
+from core.encryption import decrypt_ini, import_license_file
 import webbrowser
 
 class AccountTab(tk.Frame):
