@@ -53,7 +53,7 @@ class FDJDataManager:
         for file in data_files:
             file_path = os.path.join(game_dir, file)
             if file.endswith('.csv'):
-                df = pd.read_csv(file_path)
+                df = pd.read_csv(file_path, sep=',')
             else:
                 df = pd.read_excel(file_path)
             all_data.append(df)

@@ -1,5 +1,7 @@
 import random
 import numpy as np
+
+# Supposons que les fonctions suivantes soient définies dans core.statistics
 from core.statistics import (
     get_frequent_numbers,
     detect_repeating_patterns,
@@ -22,14 +24,14 @@ from core.statistics import (
 )
 
 def generate_model_h_optimized_grid(game_config, history_df, draw_date=None):
-    """Génère une grille optimisée intégrant l’analyse des cycles longs."""
-    # Enrichissement des données historiques
+    """Génère une grille optimisée adaptée à chaque jeu."""
+    # Étapes analytiques communes
     frequent_nums, frequent_stars = get_frequent_numbers(history_df, game_config)
     pattern_nums = detect_repeating_patterns(history_df, game_config)
     adjusted_freq = apply_lunar_cycle_weight(frequent_nums, draw_date)
     positive_bias = detect_positive_sequences(history_df, game_config)
 
-    # Ajout des nouvelles analyses avancées
+    # Pondérations avancées
     fractal_bonus = detect_fractal_patterns(history_df, game_config)
     game_theory_weights = game_theory_analysis(history_df, game_config)
     period_trends = evaluate_periodic_trends(history_df, game_config)
@@ -46,21 +48,31 @@ def generate_model_h_optimized_grid(game_config, history_df, draw_date=None):
     long_term_cycles = detect_long_term_cycles(history_df)
 
     def smart_draw(pool, *weight_maps, count):
-        """Effectue un tirage pondéré basé sur divers modèles."""
         weights = [np.prod([wm.get(n, 1) for wm in weight_maps]) for n in pool]
         weights = np.array(weights) / np.sum(weights)
         return sorted(random.choices(pool, weights=weights, k=count))
 
-    # Application du tirage optimisé
+    # Numéros principaux
     nums = smart_draw(
-        game_config['pool'], adjusted_freq, pattern_nums, positive_bias, fractal_bonus,
+        range(1, game_config['pool'] + 1),
+        adjusted_freq, pattern_nums, positive_bias, fractal_bonus,
         game_theory_weights, period_trends, bayesian_weights, markov_predictions,
         neural_weights, anomaly_correction, loto_adjustments, std_dev_analysis,
-        probability_adjustment, evolutionary_tuning, monte_carlo_results, clustered_numbers,
-        long_term_cycles, count=game_config['numbers']
+        probability_adjustment, evolutionary_tuning, monte_carlo_results,
+        clustered_numbers, long_term_cycles,
+        count=game_config['numbers']
     )
-    stars = smart_draw(
-        game_config['stars_pool'], frequent_stars, set(), count=game_config['stars']
-    ) if game_config['stars'] > 0 else []
 
-    return {'numbers': nums, 'stars': stars}
+    # Étoiles / jokers / complémentaires (si présents)
+    stars = []
+    if game_config.get('stars', 0) > 0:
+        stars = smart_draw(
+            range(1, game_config['starPool'] + 1),
+            frequent_stars,
+            count=game_config['stars']
+        )
+
+    return {
+        'numbers': nums,
+        'stars': stars
+    }

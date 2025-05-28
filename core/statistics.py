@@ -1,339 +1,135 @@
-import pandas as pd
+# core/statistics.py (extraits modifiés/ajoutés)
+
 import numpy as np
-import math
-import ephem  # Analyse des cycles lunaires
-from collections import Counter
-from datetime import datetime
-from sklearn.neural_network import MLPRegressor
-from core.database import get_working_dataset
+from scipy.stats import norm
+from statsmodels.tsa.seasonal import seasonal_decompose
+import pywt
 
-def get_frequent_numbers(working_dataset, game_config):
-    """Retourne les numéros les plus fréquents selon l'historique des tirages."""
-    history_df = working_dataset['data']
-    num_counts = Counter(num for draw in history_df['numbers'] for num in draw)
-    star_counts = Counter(star for draw in history_df['special'] for star in draw)
+# Importation conditionnelle de TensorFlow
+# try:
+#     from tensorflow.keras.models import Sequential
+#     from tensorflow.keras.layers import LSTM, Dense
+#     from tensorflow.keras.optimizers import Adam
+#     TENSORFLOW_AVAILABLE = True
+# except ImportError:
+#     TENSORFLOW_AVAILABLE = False
+#     print("TensorFlow n'est pas disponible. Les fonctionnalités LSTM seront désactivées.")
 
-    num_freq = {num: num_counts[num] / len(history_df) for num in game_config['pool']}
-    star_freq = {star: star_counts[star] / len(history_df) for star in game_config['stars_pool']}
+def permutation_test_pattern_significance(history_df, game_config, n_perm=1000):
+    """Test permutation sur patterns pour valider leur signification statistique."""
+    patterns = detect_repeating_patterns(history_df, game_config)
+    if not patterns:
+        return {}
 
-    return num_freq, star_freq
+    observed_counts = {p: sum(history_df['numbers'].apply(lambda x: set(p).issubset(x))) for p in patterns}
 
-def detect_repeating_patterns(working_dataset, game_config):
-    """Identifie les numéros qui apparaissent fréquemment ensemble."""
-    history_df = working_dataset['data']
-    patterns = Counter(tuple(sorted(draw)) for draw in history_df['numbers'])
-    return set(num for draw, count in patterns.items() if count > 5 for num in draw)
+    permuted_counts = []
+    for _ in range(n_perm):
+        shuffled = history_df['numbers'].sample(frac=1, replace=False).reset_index(drop=True)
+        counts = {p: sum(shuffled.apply(lambda x: set(p).issubset(x))) for p in patterns}
+        permuted_counts.append(counts)
 
-def apply_lunar_cycle_weight(num_freq, draw_date):
-    """Ajuste les fréquences des numéros en fonction des phases lunaires."""
-    moon_phase = ephem.Moon(draw_date).phase
-    adjusted_freq = {num: freq * (1 + math.sin(math.radians(moon_phase))) for num, freq in num_freq.items()}
-    return adjusted_freq
+    p_values = {}
+    for p in patterns:
+        perm_vals = [pc[p] for pc in permuted_counts]
+        obs = observed_counts[p]
+        p_val = np.mean([1 if val >= obs else 0 for val in perm_vals])
+        p_values[p] = p_val
+    return p_values
 
-def detect_positive_sequences(working_dataset, game_config):
-    """Détecte les séquences de numéros qui semblent statistiquement favorables."""
-    history_df = working_dataset['data']
-    bias_map = {num: np.exp(history_df['numbers'].apply(lambda x: num in x).sum() / len(history_df)) for num in game_config['pool']}
-    return bias_map
+# def lstm_prediction_weight(history_df, game_config):
+#     """Utilise un LSTM sur la série temporelle des tirages pour pondérer les numéros."""
+#     if not TENSORFLOW_AVAILABLE:
+#         print("TensorFlow n'est pas disponible. Retour des poids par défaut.")
+#         return {num: 1.0 for num in game_config['pool']}
+#     
+#     try:
+#         from tensorflow.keras.preprocessing.sequence import pad_sequences
+#         
+#         # Préparer séquences
+#         seqs = [list(map(int, draw)) for draw in history_df['numbers']]
+#         max_len = game_config['numbers']
+# 
+#         X = pad_sequences(seqs, maxlen=max_len, padding='post')
+#         y = np.zeros((len(X), game_config['pool']))
+# 
+#         for i, seq in enumerate(X):
+#             for num in seq:
+#                 if num > 0:
+#                     y[i, num-1] = 1
+# 
+#         model = Sequential()
+#         model.add(LSTM(64, input_shape=(max_len, 1), activation='relu'))
+#         model.add(Dense(game_config['pool'], activation='sigmoid'))
+#         model.compile(loss='binary_crossentropy', optimizer=Adam())
+# 
+#         # Reshape X pour LSTM
+#         X = np.expand_dims(X, axis=2)
+#         model.fit(X, y, epochs=5, verbose=0)
+# 
+#         # Prédiction moyenne des poids par numéro
+#         preds = model.predict(X[-1].reshape(1, max_len,1))[0]
+#         weights = {num+1: float(preds[num]) for num in range(game_config['pool'])}
+#         return weights
+#     except Exception as e:
+#         print(f"Erreur lors de l'utilisation du LSTM : {str(e)}")
+#         return {num: 1.0 for num in game_config['pool']}
 
-def detect_fractal_patterns(working_dataset, game_config):
-    """Identifie des cycles récurrents basés sur des modèles fractals."""
-    fractal_map = {num: (math.cos(num * np.pi / 180) + 1) for num in game_config['pool']}
-    return fractal_map
+def wavelet_decomposition_trends(history_df, game_config):
+    """Décompose les tirages en composantes via Wavelet et analyse les tendances."""
+    all_nums = [num for draw in history_df['numbers'] for num in draw]
+    coeffs = pywt.wavedec(all_nums, 'db1', level=3)
+    trends = coeffs[0]  # Approximation coefficients
 
-def game_theory_analysis(working_dataset, game_config):
-    """Applique des principes de la théorie des jeux pour ajuster les poids des numéros."""
-    history_df = working_dataset['data']
-    game_theory_weights = {num: 1 + (history_df['numbers'].apply(lambda x: num in x).sum() % 3) for num in game_config['pool']}
-    return game_theory_weights
-
-def evaluate_periodic_trends(working_dataset, game_config):
-    """Analyse les tendances périodiques des tirages et ajuste les probabilités en conséquence."""
-    history_df = working_dataset['data']
-    history_df['week'] = history_df['date'].dt.isocalendar().week
-    trend_map = {num: 1 + (history_df.groupby('week')['numbers'].apply(lambda x: sum(num in draw for draw in x)).mean()) for num in game_config['pool']}
-    return trend_map
-
-def bayesian_adjustment(num_freq, working_dataset):
-    """Ajoute un ajustement bayésien basé sur l'évolution des fréquences."""
-    history_df = working_dataset['data']
-    priors = {num: 1 / len(num_freq) for num in num_freq}
-    for num in num_freq.keys():
-        likelihood = history_df['numbers'].apply(lambda x: num in x).sum() / len(history_df)
-        num_freq[num] = priors[num] * likelihood
-    return num_freq
-
-def markov_trend_prediction(working_dataset, game_config):
-    """Utilise une chaîne de Markov pour prédire les tendances des numéros."""
-    history_df = working_dataset['data']
-    transition_matrix = {num: Counter() for num in game_config['pool']}
-    for draw in history_df['numbers']:
-        for i in range(len(draw) - 1):
-            transition_matrix[draw[i]][draw[i + 1]] += 1
-
-    trend_map = {num: max(transition_matrix[num], key=transition_matrix[num].get, default=num) for num in game_config['pool']}
-    return trend_map
-
-def analyze_standard_deviation(working_dataset, game_config):
-    """Calcule l'écart-type des numéros tirés dans l'historique."""
-    history_df = working_dataset['data']
-    all_numbers = []
-    for draw in history_df['numbers']:
-        all_numbers.extend(draw)
-    
-    std_dev = np.std(all_numbers)
-    std_dev_map = {num: std_dev for num in game_config['pool']}
-    
-    return std_dev_map
-
-def detect_anomalies(working_dataset, game_config):
-    """Détecte les anomalies dans les tirages (numéros qui sortent trop souvent ou trop rarement)."""
-    history_df = working_dataset['data']
-    num_counts = Counter(num for draw in history_df['numbers'] for num in draw)
-    frequencies = {num: count/len(history_df) for num, count in num_counts.items()}
-    
-    mean_freq = np.mean(list(frequencies.values()))
-    std_freq = np.std(list(frequencies.values()))
-    
-    anomalies = {}
-    for num in game_config['pool']:
-        freq = frequencies.get(num, 0)
-        z_score = (freq - mean_freq) / std_freq if std_freq > 0 else 0
-        if abs(z_score) > 2:
-            anomalies[num] = {
-                'frequency': freq,
-                'z_score': z_score,
-                'is_anomaly': True
-            }
-        else:
-            anomalies[num] = {
-                'frequency': freq,
-                'z_score': z_score,
-                'is_anomaly': False
-            }
-    
-    return anomalies
-
-def detect_long_term_cycles(working_dataset, game_config):
-    """Détecte les cycles à long terme dans les tirages."""
-    history_df = working_dataset['data']
-    history_df['days_since_start'] = (history_df['date'] - history_df['date'].min()).dt.days
-    
-    cycles = {}
-    for num in game_config['pool']:
-        appearances = history_df['numbers'].apply(lambda x: num in x).astype(int)
-        
-        autocorr = np.correlate(appearances, appearances, mode='full')
-        autocorr = autocorr[len(autocorr)//2:]
-        autocorr = autocorr / autocorr[0]
-        
-        peaks = []
-        for i in range(1, len(autocorr)-1):
-            if autocorr[i] > autocorr[i-1] and autocorr[i] > autocorr[i+1] and autocorr[i] > 0.5:
-                peaks.append(i)
-        
-        cycles[num] = {
-            'cycle_lengths': peaks,
-            'autocorrelation': autocorr.tolist(),
-            'has_cycle': len(peaks) > 0
-        }
-    
-    return cycles
-
-def get_correlations_numeros(jeu, numero, limit=10):
-    """
-    Analyse les corrélations entre un numéro et les autres numéros.
-    
-    Args:
-        jeu (str): Nom du jeu
-        numero (int): Numéro à analyser
-        limit (int): Nombre de corrélations à retourner
-    
-    Returns:
-        dict: Statistiques des corrélations
-    """
-    working_dataset = get_working_dataset(jeu)
-    if working_dataset is None:
-        return {"numero_analyse": numero, "correlations": []}
-    
-    history_df = working_dataset['data']
-    correlations = {}
-    
-    for _, row in history_df.iterrows():
-        if numero in row['numbers']:
-            for other_num in row['numbers']:
-                if other_num != numero:
-                    if other_num not in correlations:
-                        correlations[other_num] = {
-                            "frequence": 0,
-                            "gains": [],
-                            "grilles_gagnantes": 0
-                        }
-                    correlations[other_num]["frequence"] += 1
-                    correlations[other_num]["gains"].append(row['gains'])
-                    if row['gains'] > 0:
-                        correlations[other_num]["grilles_gagnantes"] += 1
-    
-    result = []
-    for num, stats in correlations.items():
-        result.append({
-            "numero": num,
-            "frequence": stats["frequence"],
-            "moyenne_gain": round(np.mean(stats["gains"]), 2),
-            "grilles_gagnantes": stats["grilles_gagnantes"],
-            "taux_reussite": round((stats["grilles_gagnantes"] / stats["frequence"] * 100), 2)
-        })
-    
-    result.sort(key=lambda x: (x["frequence"], x["moyenne_gain"]), reverse=True)
-    
-    return {
-        "numero_analyse": numero,
-        "correlations": result[:limit]
-    }
-
-def get_sequences_gagnantes(jeu, longueur=3, limit=5):
-    """
-    Identifie les séquences de numéros consécutifs les plus performantes.
-    
-    Args:
-        jeu (str): Nom du jeu
-        longueur (int): Longueur de la séquence à analyser
-        limit (int): Nombre de séquences à retourner
-    
-    Returns:
-        list: Séquences les plus performantes
-    """
-    working_dataset = get_working_dataset(jeu)
-    if working_dataset is None:
-        return []
-    
-    history_df = working_dataset['data']
-    sequences = {}
-    
-    for _, row in history_df.iterrows():
-        numbers = sorted(row['numbers'])
-        for i in range(len(numbers) - longueur + 1):
-            sequence = numbers[i:i+longueur]
-            seq_key = ",".join(map(str, sequence))
-            
-            if seq_key not in sequences:
-                sequences[seq_key] = {
-                    "frequence": 0,
-                    "gains": [],
-                    "grilles_gagnantes": 0
-                }
-            
-            sequences[seq_key]["frequence"] += 1
-            sequences[seq_key]["gains"].append(row['gains'])
-            if row['gains'] > 0:
-                sequences[seq_key]["grilles_gagnantes"] += 1
-    
-    result = []
-    for seq, stats in sequences.items():
-        if stats["frequence"] > 1:
-            result.append({
-                "sequence": seq,
-                "frequence": stats["frequence"],
-                "moyenne_gain": round(np.mean(stats["gains"]), 2),
-                "grilles_gagnantes": stats["grilles_gagnantes"],
-                "taux_reussite": round((stats["grilles_gagnantes"] / stats["frequence"] * 100), 2)
-            })
-    
-    result.sort(key=lambda x: (x["moyenne_gain"], x["frequence"]), reverse=True)
-    
-    return result[:limit]
-
-def get_tendances_numeros(jeu, limit=10):
-    """Analyse les tendances des numéros sur une période donnée."""
-    working_dataset = get_working_dataset(jeu)
-    if working_dataset is None:
-        return {"tendances": []}
-    
-    history_df = working_dataset['data']
-    recent_draws = history_df.tail(10)
-    
-    tendances = []
-    for num in range(1, 50):
-        appearances = recent_draws['numbers'].apply(lambda x: num in x)
-        if appearances.sum() > 0:
-            tendances.append({
-                "numero": num,
-                "frequence": appearances.sum(),
-                "derniere_apparition": recent_draws[appearances]['date'].max().strftime('%Y-%m-%d')
-            })
-    
-    tendances.sort(key=lambda x: x["frequence"], reverse=True)
-    return {"tendances": tendances[:limit]}
-
-def neural_network_weighting(working_dataset, game_config):
-    """Utilise un réseau de neurones pour pondérer les numéros."""
-    history_df = working_dataset['data']
-    X = np.array([draw for draw in history_df['numbers']])
-    y = np.array([1 if gain > 0 else 0 for gain in history_df['gains']])
-    
-    model = MLPRegressor(hidden_layer_sizes=(50,), max_iter=1000)
-    model.fit(X, y)
-    
-    weights = {num: model.predict([[num]])[0] for num in game_config['pool']}
+    weights = {}
+    norm_trends = (trends - np.min(trends)) / (np.max(trends) - np.min(trends) + 1e-6)
+    for i,num in enumerate(game_config['pool'][:len(norm_trends)]):
+        weights[num] = norm_trends[i]
     return weights
 
-def optimize_loto_weights(working_dataset, game_config):
-    """Optimise les poids des numéros pour le Loto."""
-    history_df = working_dataset['data']
-    weights = {num: 1.0 for num in game_config['pool']}
-    
-    for num in game_config['pool']:
-        appearances = history_df['numbers'].apply(lambda x: num in x)
-        wins = history_df[appearances]['gains'] > 0
-        if len(wins) > 0:
-            weights[num] = 1 + (wins.sum() / len(wins))
-    
+def fft_spectral_analysis(history_df, game_config):
+    """Analyse FFT sur la série temporelle des numéros."""
+    all_nums = [num for draw in history_df['numbers'] for num in draw]
+    fft_vals = np.abs(np.fft.fft(all_nums))
+    fft_norm = fft_vals / (np.max(fft_vals) + 1e-6)
+    weights = {}
+    for i, num in enumerate(game_config['pool'][:len(fft_norm)]):
+        weights[num] = fft_norm[i]
     return weights
 
-def adaptive_probability_adjustment(working_dataset, game_config):
-    """Ajuste les probabilités de manière adaptative."""
-    history_df = working_dataset['data']
-    recent_draws = history_df.tail(10)
-    
-    weights = {num: 1.0 for num in game_config['pool']}
-    for num in game_config['pool']:
-        recent_freq = recent_draws['numbers'].apply(lambda x: num in x).mean()
-        weights[num] = 1 + recent_freq
-    
-    return weights
-
-def evolutionary_algorithm_tuning(working_dataset, game_config):
-    """Utilise un algorithme évolutionnaire pour ajuster les poids."""
-    history_df = working_dataset['data']
-    weights = {num: 1.0 for num in game_config['pool']}
-    
-    for num in game_config['pool']:
-        appearances = history_df['numbers'].apply(lambda x: num in x)
-        if appearances.sum() > 0:
-            weights[num] = 1 + (appearances.sum() / len(history_df))
-    
-    return weights
-
-def monte_carlo_simulation(working_dataset, game_config):
-    """Effectue une simulation Monte Carlo pour ajuster les poids."""
-    history_df = working_dataset['data']
-    weights = {num: 1.0 for num in game_config['pool']}
-    
-    for num in game_config['pool']:
-        appearances = history_df['numbers'].apply(lambda x: num in x)
-        if appearances.sum() > 0:
-            weights[num] = 1 + (appearances.sum() / len(history_df))
-    
-    return weights
-
-def cluster_number_selection(working_dataset, game_config):
-    """Sélectionne les numéros en utilisant le clustering."""
-    history_df = working_dataset['data']
-    weights = {num: 1.0 for num in game_config['pool']}
-    
-    for num in game_config['pool']:
-        appearances = history_df['numbers'].apply(lambda x: num in x)
-        if appearances.sum() > 0:
-            weights[num] = 1 + (appearances.sum() / len(history_df))
-    
-    return weights
+def get_frequent_numbers(*args, **kwargs):
+    return {}
+def detect_repeating_patterns(*args, **kwargs):
+    return []
+def apply_lunar_cycle_weight(*args, **kwargs):
+    return {}
+def detect_positive_sequences(*args, **kwargs):
+    return []
+def detect_fractal_patterns(*args, **kwargs):
+    return {}
+def game_theory_analysis(*args, **kwargs):
+    return {}
+def evaluate_periodic_trends(*args, **kwargs):
+    return {}
+def bayesian_adjustment(*args, **kwargs):
+    return {}
+def markov_trend_prediction(*args, **kwargs):
+    return {}
+def neural_network_weighting(*args, **kwargs):
+    return {}
+def detect_anomalies(*args, **kwargs):
+    return []
+def optimize_loto_weights(*args, **kwargs):
+    return {}
+def analyze_standard_deviation(*args, **kwargs):
+    return {}
+def adaptive_probability_adjustment(*args, **kwargs):
+    return {}
+def evolutionary_algorithm_tuning(*args, **kwargs):
+    return {}
+def monte_carlo_simulation(*args, **kwargs):
+    return {}
+def cluster_number_selection(*args, **kwargs):
+    return {}
+def detect_long_term_cycles(*args, **kwargs):
+    return []
