@@ -22,15 +22,32 @@ JEUX_REGLES = {
         "special_range": (1, 12),
         "special_count": 2,
         "draw_days": ["Tuesday", "Friday"]
+    },
+    "Keno": {
+        "numbers_range": (1, 70),
+        "numbers_count": 10,
+        "draw_days": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+    },
+    "Super-Loto": {
+        "numbers_range": (1, 90),
+        "numbers_count": 5,
+        "special_range": (1, 10),
+        "special_count": 1,
     }
 }
 
 def fetch_latest_rules():
     """Importe les règles à jour depuis la base en ligne de la Française des Jeux."""
     url = "https://www.fdj.fr/jeux-de-tirage"
-    response = requests.get(url)
-    if response.status_code == 200:
-        return JEUX_REGLES  # À remplacer par un parsing réel des règles mises à jour
+    try:
+        response = requests.get(url)
+        if response.status_code == 200:
+            print("✅ Règles récupérées avec succès")
+            return JEUX_REGLES  # À remplacer par un parsing réel des règles mises à jour
+        else:
+            print("❌ Échec de la récupération des règles (code HTTP)")
+    except Exception as e:
+        print(f"❌ Erreur lors de la récupération des règles : {e}")
     return None
 
 def validate_draw_format(game, draw):
@@ -95,28 +112,22 @@ EURODREAMS_RULES = {
     'url': 'https://www.fdj.fr/jeux-de-tirage/eurodreams/historique'
 }
 
+SUPER_LOTO_RULES = {
+    'name': 'SUPER-LOTO',
+    'numbers': {
+        'main': {'count': 5, 'min': 1, 'max': 90},
+        'chance': {'count': 1, 'min': 1, 'max': 10}
+    },
+    'price': 2.20,
+    'draw_days': ['Lundi', 'Mercredi', 'Samedi'],
+    'jackpot_min': 2000000,
+    'url': 'https://www.fdj.fr/jeux-de-tirage/super-loto/historique'
+}
 # Dictionnaire de tous les jeux disponibles
 GAMES = {
     'LOTO': LOTO_RULES,
     'EUROMILLIONS': EUROMILLIONS_RULES,
     'KENO': KENO_RULES,
     'EURODREAMS': EURODREAMS_RULES,
-    "Keno": {
-        "numbers": {
-            "main": {"count": "2 à 10", "max": 70},
-        },
-        "draw_days": ["Tous les jours (midi et soir)"],
-        "price": "1€ à 10€ (option multiplicateur double la mise)",
-        "multiplicateur": True,
-        "joker_plus": True,
-        "jackpot_max": "2 000 000€ cash ou 100 000€/an à vie",
-        "special": [
-            "20 numéros tirés au sort parmi 70",
-            "Option Multiplicateur : x2, x3 ou x5 (mise doublée)",
-            "Joker+ : 7 numéros générés automatiquement, gain jusqu'à 500 000€",
-            "Plafond : une même combinaison (8, 9 ou 10 numéros) ne peut pas être jouée plus de 35 fois par tirage",
-            "Gains à vie pour 9 ou 10 numéros cochés (voir règlement FDJ)",
-            "Tirages tous les jours à 13h05 et 20h05"
-        ]
-    }
+    'SUPER-LOTO': SUPER_LOTO_RULES,
 }

@@ -4,7 +4,7 @@ import requests
 import pandas as pd
 from datetime import datetime
 from configparser import ConfigParser
-from .regles import GAMES
+from regles import GAMES
 from bs4 import BeautifulSoup
 
 class FDJDataManager:

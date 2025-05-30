@@ -29,3 +29,4 @@ keras
 statsmodels
 PyWavelets
 markdown
+bs4
