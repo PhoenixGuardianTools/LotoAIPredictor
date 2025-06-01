@@ -6,12 +6,16 @@ from datetime import datetime
 from configparser import ConfigParser
 from regles import GAMES
 from bs4 import BeautifulSoup
+from core.data_cleaner import DataCleaner
+import logging
 
 class FDJDataManager:
     def __init__(self):
         self.config = ConfigParser()
         self.config.read('config/config.ini')
         self.data_dir = 'data/fdj'
+        self.cleaner = DataCleaner()
+        self.logger = logging.getLogger(__name__)
         os.makedirs(self.data_dir, exist_ok=True)
 
     def download_historical_data(self, game_name):
@@ -37,7 +41,7 @@ class FDJDataManager:
             
             return True
         except Exception as e:
-            print(f"Erreur lors du téléchargement des données pour {game_name}: {str(e)}")
+            self.logger.error(f"Erreur lors du téléchargement des données pour {game_name}: {str(e)}")
             return False
 
     def process_historical_data(self, game_name):
@@ -52,14 +56,39 @@ class FDJDataManager:
 
         for file in data_files:
             file_path = os.path.join(game_dir, file)
-            if file.endswith('.csv'):
-                df = pd.read_csv(file_path, sep=',')
-            else:
-                df = pd.read_excel(file_path)
-            all_data.append(df)
+            try:
+                if file.endswith('.csv'):
+                    df = self.cleaner.load_and_clean_csv(file_path, game_name.lower())
+                else:
+                    # Pour les fichiers Excel, on les convertit d'abord en CSV
+                    temp_csv = os.path.join(game_dir, f"{os.path.splitext(file)[0]}_temp.csv")
+                    pd.read_excel(file_path).to_csv(temp_csv, index=False)
+                    df = self.cleaner.load_and_clean_csv(temp_csv, game_name.lower())
+                    os.remove(temp_csv)
+                
+                if not df.empty:
+                    all_data.append(df)
+                    
+            except Exception as e:
+                self.logger.error(f"Erreur lors du traitement de {file}: {str(e)}")
+                continue
 
         if all_data:
+            # Concaténation des DataFrames
             combined_data = pd.concat(all_data, ignore_index=True)
+            
+            # Suppression des doublons en gardant la première occurrence
+            combined_data = combined_data.drop_duplicates(subset=['date_tirage'], keep='first')
+            
+            # Tri par date
+            combined_data = combined_data.sort_values('date_tirage')
+            
+            # Log des statistiques
+            self.logger.info(f"Données traitées pour {game_name}:")
+            self.logger.info(f"- Nombre total de lignes: {len(combined_data)}")
+            self.logger.info(f"- Période: de {combined_data['date_tirage'].min()} à {combined_data['date_tirage'].max()}")
+            self.logger.info(f"- Colonnes avec valeurs manquantes: {combined_data.isna().sum().to_dict()}")
+            
             return combined_data
         return None
 
@@ -67,9 +96,26 @@ class FDJDataManager:
         """Met à jour les données pour tous les jeux"""
         results = {}
         for game_name in GAMES.keys():
-            if self.download_historical_data(game_name):
-                data = self.process_historical_data(game_name)
-                results[game_name] = data is not None
+            try:
+                if self.download_historical_data(game_name):
+                    data = self.process_historical_data(game_name)
+                    results[game_name] = {
+                        'success': data is not None,
+                        'rows': len(data) if data is not None else 0,
+                        'date_min': data['date_tirage'].min() if data is not None else None,
+                        'date_max': data['date_tirage'].max() if data is not None else None
+                    }
+                else:
+                    results[game_name] = {
+                        'success': False,
+                        'error': 'Échec du téléchargement'
+                    }
+            except Exception as e:
+                self.logger.error(f"Erreur lors de la mise à jour de {game_name}: {str(e)}")
+                results[game_name] = {
+                    'success': False,
+                    'error': str(e)
+                }
         return results
 
     def get_latest_results(self, game_name):
