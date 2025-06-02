@@ -55,7 +55,7 @@ import pandas as pd
 from collections import defaultdict
 import pywt
 from datetime import datetime
-from typing import Dict, List, Set, Union, Any, Tuple
+from typing import Dict, List, Set, Union, Any, Tuple, Optional
 import functools
 import logging
 import time
@@ -539,51 +539,439 @@ def bayesian_network_integration(history, game_config):
 # Fonction utilitaire
 # ---------------------------
 
-def combine_weights(weights_dict):
-    """
-    Combine les poids de tous les modules en score global pondéré.
-    """
-    score = 0.0
-    poids_modules = {
-        'freq_nums': 0.3,
-        'pattern_nums': 0.15,
-        'lunar_cycle': 0.05,
-        'positive_seq': 0.1,
-        'fractal': 0.05,
-        'game_theory': 0.05,
-        'periodic_trends': 0.05,
-        'bayesian': 0.05,
-        'markov': 0.05,
-        'neural_net': 0.05,
-        'anomalies': 0.03,
-        'loto_opt': 0.03,
-        'std_dev': 0.02,
-        'adaptive_prob': 0.02,
-        'evolutionary': 0.02,
-        'monte_carlo': 0.02,
-        'clustering': 0.02,
-        'long_term_cycles': 0.02,
-        'permutation_test': 0.01,
-        'wavelet': 0.01,
-        'fft': 0.01,
-        'bayes_net': 0.02,
-    }
+class FractalProcessor(StatisticalProcessor):
+    """Processeur pour l'analyse des motifs fractals."""
+    
+    def __init__(self, history: Union[Dict, pd.DataFrame], game_config: Dict[str, Any]):
+        super().__init__(history, game_config)
+        self._fractal_scores: Dict[int, float] = {}
+        self._window_size: int = 3
+        
+    @property
+    def fractal_scores(self) -> Dict[int, float]:
+        """Getter pour les scores fractals."""
+        return self._fractal_scores
+        
+    @fractal_scores.setter
+    def fractal_scores(self, value: Dict[int, float]):
+        """Setter pour les scores fractals."""
+        if not isinstance(value, dict):
+            raise ValueError("Les scores fractals doivent être un dictionnaire")
+        self._fractal_scores = value
+        
+    @property
+    def window_size(self) -> int:
+        """Getter pour la taille de la fenêtre."""
+        return self._window_size
+        
+    @window_size.setter
+    def window_size(self, value: int):
+        """Setter pour la taille de la fenêtre."""
+        if not isinstance(value, int) or value < 1:
+            raise ValueError("La taille de la fenêtre doit être un entier positif")
+        self._window_size = value
+        
+    @cache_result(ttl_seconds=3600)
+    def process(self) -> Dict[int, float]:
+        """Analyse les motifs fractals dans les tirages."""
+        if self.data.empty:
+            return {}
+            
+        try:
+            # Analyse des motifs auto-similaires
+            patterns = self._analyze_fractal_patterns()
+            
+            # Calcul des scores
+            scores = self._calculate_fractal_scores(patterns)
+            
+            # Normalisation des scores
+            self._fractal_scores = self._normalize_scores(scores)
+            
+            return self._fractal_scores
+            
+        except Exception as e:
+            logger.error(f"Erreur dans l'analyse fractale: {e}")
+            return {}
+            
+    def _analyze_fractal_patterns(self) -> List[Tuple]:
+        """Analyse les motifs fractals dans les données."""
+        patterns = []
+        draws = self.data.values.tolist()
+        
+        for i in range(len(draws) - self._window_size + 1):
+            pattern = tuple(draws[i:i + self._window_size])
+            patterns.append(pattern)
+            
+        return patterns
+        
+    def _calculate_fractal_scores(self, patterns: List[Tuple]) -> Dict[int, float]:
+        """Calcule les scores fractals pour chaque numéro."""
+        scores = defaultdict(float)
+        
+        for pattern in patterns:
+            for num in pattern:
+                scores[num] += 1
+                
+        return dict(scores)
+        
+    def _normalize_scores(self, scores: Dict[int, float]) -> Dict[int, float]:
+        """Normalise les scores entre 0 et 1."""
+        if not scores:
+            return {}
+            
+        max_score = max(scores.values())
+        if max_score == 0:
+            return {}
+            
+        return {num: score/max_score for num, score in scores.items()}
 
-    for module_name, weight in poids_modules.items():
-        module_value = weights_dict.get(module_name, 0)
-        if isinstance(module_value, dict):
-            module_score = sum(module_value.values())
-        elif isinstance(module_value, (int, float)):
-            module_score = module_value
-        else:
-            module_score = 0
-        score += weight * module_score
+class WeightCombiner(StatisticalProcessor):
+    """Processeur pour la combinaison des poids."""
+    
+    def __init__(self, history: Union[Dict, pd.DataFrame], game_config: Dict[str, Any]):
+        super().__init__(history, game_config)
+        self._weight_factors: Dict[str, float] = {
+            'freq_nums': 0.3,
+            'pattern_nums': 0.2,
+            'lunar_cycle': 0.05,
+            'positive_seq': 0.1,
+            'fractal': 0.05,
+            'game_theory': 0.05,
+            'periodic_trends': 0.05,
+            'bayesian': 0.05,
+            'markov': 0.05,
+            'neural_net': 0.05,
+            'anomalies': 0.05,
+            'loto_opt': 0.05,
+            'std_dev': 0.05,
+            'adaptive_prob': 0.05,
+            'evolutionary': 0.05,
+            'monte_carlo': 0.05,
+            'clustering': 0.05,
+            'long_term_cycles': 0.05,
+            'wavelet': 0.05,
+            'fft': 0.05
+        }
+        self._combined_weights: Dict[int, float] = {}
+        
+    @property
+    def weight_factors(self) -> Dict[str, float]:
+        """Getter pour les facteurs de poids."""
+        return self._weight_factors
+        
+    @weight_factors.setter
+    def weight_factors(self, value: Dict[str, float]):
+        """Setter pour les facteurs de poids."""
+        if not isinstance(value, dict):
+            raise ValueError("Les facteurs de poids doivent être un dictionnaire")
+        self._validate_weight_factors(value)
+        self._weight_factors = value
+        
+    @property
+    def combined_weights(self) -> Dict[int, float]:
+        """Getter pour les poids combinés."""
+        return self._combined_weights
+        
+    @combined_weights.setter
+    def combined_weights(self, value: Dict[int, float]):
+        """Setter pour les poids combinés."""
+        if not isinstance(value, dict):
+            raise ValueError("Les poids combinés doivent être un dictionnaire")
+        self._combined_weights = value
+        
+    def _validate_weight_factors(self, factors: Dict[str, float]):
+        """Valide que la somme des facteurs de poids est égale à 1."""
+        total = sum(factors.values())
+        if not (0.99 <= total <= 1.01):  # Tolérance pour les erreurs d'arrondi
+            raise ValueError(f"La somme des poids doit être égale à 1, actuellement: {total}")
+            
+    @cache_result(ttl_seconds=3600)
+    def process(self) -> Dict[int, float]:
+        """Combine les poids de différents modules avec validation."""
+        try:
+            total_score = 0
+            valid_modules = 0
+            
+            for module_name, weight in self._weight_factors.items():
+                val = self.data.get(module_name, {})
+                try:
+                    score = self._calculate_module_score(val)
+                    if score is not None:
+                        total_score += score * weight
+                        valid_modules += 1
+                except (ValueError, TypeError) as e:
+                    logger.error(f"Erreur de calcul pour {module_name}: {e}")
+                    continue
+                    
+            if valid_modules == 0:
+                raise ValueError("Aucun module valide trouvé pour le calcul du score")
+                
+            self._combined_weights = self._normalize_score(total_score / valid_modules)
+            return self._combined_weights
+            
+        except Exception as e:
+            logger.error(f"Erreur lors de la combinaison des poids: {e}")
+            return {}
+            
+    def _calculate_module_score(self, value: Any) -> Optional[float]:
+        """Calcule le score pour un module donné."""
+        if isinstance(value, dict):
+            return sum(float(v) for v in value.values() if v is not None)
+        elif isinstance(value, (int, float)):
+            return float(value)
+        return None
+        
+    def _normalize_score(self, score: float) -> Dict[int, float]:
+        """Normalise le score entre 0 et 1."""
+        if not (0 <= score <= 1):
+            logger.warning(f"Score invalide: {score}")
+            score = max(0, min(1, score))
+        return {'combined_score': score}
 
-    return score
+# Enregistrement des nouveaux processeurs
+StatisticalProcessorFactory.register_processor('fractal', FractalProcessor)
+StatisticalProcessorFactory.register_processor('weight_combiner', WeightCombiner)
 
-def detect_fractal_patterns(history, game_config):
+# Fonctions d'interface pour la compatibilité avec le code existant
+@lru_cache(maxsize=128)
+def detect_fractal_patterns(history: Union[Dict, pd.DataFrame], game_config: Dict[str, Any]) -> Dict[int, float]:
     """
-    Analyse fractale pour motifs auto-similaires.
+    Analyse les motifs fractals dans les tirages.
+    
+    Args:
+        history: Historique des tirages
+        game_config: Configuration du jeu
+        
+    Returns:
+        Dict[int, float]: Dictionnaire des poids fractals par numéro
     """
-    fractal_scores = {}
-    return fractal_scores
+    processor = StatisticalProcessorFactory.create_processor('fractal', history, game_config)
+    return processor.process()
+
+@lru_cache(maxsize=128)
+def combine_weights(weights_dict: Dict[str, Dict[int, float]]) -> Dict[int, float]:
+    """
+    Combine les poids de différents modules avec validation.
+    
+    Args:
+        weights_dict: Dictionnaire des poids par module
+        
+    Returns:
+        Dict[int, float]: Dictionnaire des poids combinés par numéro
+    """
+    processor = StatisticalProcessorFactory.create_processor('weight_combiner', weights_dict, {})
+    return processor.process()
+
+from collections import Counter
+
+def calculate_adjusted_expectancy(grille_nums, grille_bonus, historique_nums, historique_bonus, prob_jackpot, montant_jackpot, facteur_unicite):
+    """
+    Calcule l'espérance ajustée d'une grille, selon la rareté des numéros et bonus.
+
+    Args:
+        grille_nums (list[int]): Numéros principaux de la grille.
+        grille_bonus (list[int] or int): Bonus/étoiles de la grille.
+        historique_nums (list[int]): Liste complète des numéros historiques.
+        historique_bonus (list[int]): Liste complète des bonus historiques.
+        prob_jackpot (float): Probabilité officielle de gagner le jackpot.
+        montant_jackpot (float): Montant estimé du jackpot.
+        facteur_unicite (float): Facteur d'unicité multiplicatif.
+
+    Returns:
+        float: Espérance ajustée de la grille.
+    """
+    total_nums = len(historique_nums)
+    total_bonus = len(historique_bonus)
+
+    freq_nums = Counter(historique_nums)
+    freq_bonus = Counter(historique_bonus)
+
+    def inv_freq_weight(nums, freq, total):
+        return sum(1 - (freq.get(n, 0) / total) for n in nums) / len(nums) if nums else 0
+
+    # Assurer que le bonus est une liste
+    if isinstance(grille_bonus, int):
+        grille_bonus = [grille_bonus]
+
+    poids_nums = inv_freq_weight(grille_nums, freq_nums, total_nums)
+    poids_bonus = inv_freq_weight(grille_bonus, freq_bonus, total_bonus)
+
+    esperance_brute = prob_jackpot * montant_jackpot * facteur_unicite
+    esperance_ajustee = esperance_brute * ((poids_nums + poids_bonus) / 2)
+
+    return esperance_ajustee
+
+
+def analyse(grilles, historique_data, prob_jackpot, montant_jackpot, facteur_unicite):
+    """
+    Analyse une liste de grilles en calculant leur espérance ajustée.
+
+    Args:
+        grilles (list of dict): Chaque dict contient au moins 'nums' (list[int]) et 'bonus' (list[int] or int).
+        historique_data (dict): Dictionnaire avec 'nums' et 'bonus' historiques (list[int]).
+        prob_jackpot (float): Probabilité officielle du jackpot.
+        montant_jackpot (float): Montant estimé du jackpot.
+        facteur_unicite (float): Facteur multiplicateur d'unicité.
+
+    Returns:
+        list of dict: Grilles enrichies avec la clé 'esperance_ajustee'.
+    """
+    historique_nums = historique_data.get('nums', [])
+    historique_bonus = historique_data.get('bonus', [])
+
+    resultats = []
+    for grille in grilles:
+        nums = grille.get('nums', [])
+        bonus = grille.get('bonus', [])
+        esperance = calculate_adjusted_expectancy(nums, bonus, historique_nums, historique_bonus, prob_jackpot, montant_jackpot, facteur_unicite)
+        grille['esperance_ajustee'] = esperance
+        resultats.append(grille)
+
+    return resultats
+
+class ExpectancyProcessor(StatisticalProcessor):
+    """Processeur pour l'analyse des espérances ajustées."""
+    
+    def __init__(self, history: Union[Dict, pd.DataFrame], game_config: Dict[str, Any]):
+        super().__init__(history, game_config)
+        self._prob_jackpot: float = 0.0
+        self._montant_jackpot: float = 0.0
+        self._facteur_unicite: float = 1.0
+        self._adjusted_expectancies: Dict[str, float] = {}
+        
+    @property
+    def prob_jackpot(self) -> float:
+        """Getter pour la probabilité du jackpot."""
+        return self._prob_jackpot
+        
+    @prob_jackpot.setter
+    def prob_jackpot(self, value: float):
+        """Setter pour la probabilité du jackpot."""
+        if not isinstance(value, (int, float)) or value <= 0:
+            raise ValueError("La probabilité du jackpot doit être un nombre positif")
+        self._prob_jackpot = float(value)
+        
+    @property
+    def montant_jackpot(self) -> float:
+        """Getter pour le montant du jackpot."""
+        return self._montant_jackpot
+        
+    @montant_jackpot.setter
+    def montant_jackpot(self, value: float):
+        """Setter pour le montant du jackpot."""
+        if not isinstance(value, (int, float)) or value < 0:
+            raise ValueError("Le montant du jackpot doit être un nombre positif")
+        self._montant_jackpot = float(value)
+        
+    @property
+    def facteur_unicite(self) -> float:
+        """Getter pour le facteur d'unicité."""
+        return self._facteur_unicite
+        
+    @facteur_unicite.setter
+    def facteur_unicite(self, value: float):
+        """Setter pour le facteur d'unicité."""
+        if not isinstance(value, (int, float)) or value <= 0:
+            raise ValueError("Le facteur d'unicité doit être un nombre positif")
+        self._facteur_unicite = float(value)
+        
+    @property
+    def adjusted_expectancies(self) -> Dict[str, float]:
+        """Getter pour les espérances ajustées."""
+        return self._adjusted_expectancies
+        
+    @adjusted_expectancies.setter
+    def adjusted_expectancies(self, value: Dict[str, float]):
+        """Setter pour les espérances ajustées."""
+        if not isinstance(value, dict):
+            raise ValueError("Les espérances ajustées doivent être un dictionnaire")
+        self._adjusted_expectancies = value
+        
+    @cache_result(ttl_seconds=3600)
+    def process(self) -> Dict[str, float]:
+        """Calcule les espérances ajustées pour chaque grille."""
+        if self.data.empty:
+            return {}
+            
+        try:
+            historique_nums = self.data.get('nums', [])
+            historique_bonus = self.data.get('bonus', [])
+            
+            if not historique_nums or not historique_bonus:
+                raise ValueError("Données historiques incomplètes")
+                
+            total_nums = len(historique_nums)
+            total_bonus = len(historique_bonus)
+            
+            freq_nums = Counter(historique_nums)
+            freq_bonus = Counter(historique_bonus)
+            
+            resultats = {}
+            for grille_id, grille in self.data.get('grilles', {}).items():
+                nums = grille.get('nums', [])
+                bonus = grille.get('bonus', [])
+                
+                if not nums:
+                    continue
+                    
+                # Calcul des poids
+                poids_nums = self._calculate_inverse_frequency_weight(nums, freq_nums, total_nums)
+                poids_bonus = self._calculate_inverse_frequency_weight(bonus, freq_bonus, total_bonus)
+                
+                # Calcul de l'espérance
+                esperance_brute = self._prob_jackpot * self._montant_jackpot * self._facteur_unicite
+                esperance_ajustee = esperance_brute * ((poids_nums + poids_bonus) / 2)
+                
+                resultats[grille_id] = esperance_ajustee
+                
+            self._adjusted_expectancies = resultats
+            return resultats
+            
+        except Exception as e:
+            logger.error(f"Erreur lors du calcul des espérances: {e}")
+            return {}
+            
+    def _calculate_inverse_frequency_weight(self, numbers: List[int], frequencies: Counter, total: int) -> float:
+        """Calcule le poids inverse de fréquence pour une liste de numéros."""
+        if not numbers:
+            return 0.0
+            
+        return sum(1 - (frequencies.get(n, 0) / total) for n in numbers) / len(numbers)
+
+# Enregistrement du nouveau processeur
+StatisticalProcessorFactory.register_processor('expectancy', ExpectancyProcessor)
+
+# Fonction d'interface pour la compatibilité avec le code existant
+@lru_cache(maxsize=128)
+def analyse(grilles: List[Dict], historique_data: Dict, prob_jackpot: float, montant_jackpot: float, facteur_unicite: float) -> List[Dict]:
+    """
+    Analyse une liste de grilles en calculant leur espérance ajustée.
+    
+    Args:
+        grilles: Liste de grilles à analyser
+        historique_data: Données historiques
+        prob_jackpot: Probabilité du jackpot
+        montant_jackpot: Montant du jackpot
+        facteur_unicite: Facteur d'unicité
+        
+    Returns:
+        Liste des grilles avec espérance ajustée
+    """
+    try:
+        processor = StatisticalProcessorFactory.create_processor('expectancy', historique_data, {})
+        processor.prob_jackpot = prob_jackpot
+        processor.montant_jackpot = montant_jackpot
+        processor.facteur_unicite = facteur_unicite
+        
+        expectancies = processor.process()
+        
+        # Enrichissement des grilles avec les espérances
+        for grille in grilles:
+            grille_id = str(hash(tuple(grille.get('nums', []))))
+            grille['esperance_ajustee'] = expectancies.get(grille_id, 0.0)
+            
+        return grilles
+        
+    except Exception as e:
+        logger.error(f"Erreur lors de l'analyse des grilles: {e}")
+        return grilles

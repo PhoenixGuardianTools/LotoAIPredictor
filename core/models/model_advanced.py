@@ -1,5 +1,8 @@
-import random
+import pandas as pd
 import numpy as np
+from datetime import datetime
+import logging
+from typing import Dict, List, Union, Any, Optional
 from core.statistics import (
     get_frequent_numbers,
     detect_repeating_patterns,
@@ -18,49 +21,89 @@ from core.statistics import (
     evolutionary_algorithm_tuning,
     monte_carlo_simulation,
     cluster_number_selection,
-    detect_long_term_cycles
+    detect_long_term_cycles,
+    wavelet_decomposition_trends,
+    fft_spectral_analysis,
+    combine_weights,
+    analyse
 )
 
-def generate_model_h_optimized_grid(game_config, history_df, draw_date=None):
-    """Génère une grille optimisée intégrant l’analyse des cycles longs."""
-    # Enrichissement des données historiques
-    frequent_nums, frequent_stars = get_frequent_numbers(history_df, game_config)
-    pattern_nums = detect_repeating_patterns(history_df, game_config)
-    adjusted_freq = apply_lunar_cycle_weight(frequent_nums, draw_date)
-    positive_bias = detect_positive_sequences(history_df, game_config)
+# Configuration du logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-    # Ajout des nouvelles analyses avancées
-    fractal_bonus = detect_fractal_patterns(history_df, game_config)
-    game_theory_weights = game_theory_analysis(history_df, game_config)
-    period_trends = evaluate_periodic_trends(history_df, game_config)
-    bayesian_weights = bayesian_adjustment(adjusted_freq, history_df)
-    markov_predictions = markov_trend_prediction(history_df, game_config)
-    neural_weights = neural_network_weighting(history_df, game_config)
-    anomaly_correction = detect_anomalies(history_df, game_config)
-    loto_adjustments = optimize_loto_weights(history_df, game_config)
-    std_dev_analysis = analyze_standard_deviation(history_df, game_config)
-    probability_adjustment = adaptive_probability_adjustment(history_df, game_config)
-    evolutionary_tuning = evolutionary_algorithm_tuning(history_df, game_config)
-    monte_carlo_results = monte_carlo_simulation(history_df, game_config)
-    clustered_numbers = cluster_number_selection(history_df, game_config)
-    long_term_cycles = detect_long_term_cycles(history_df)
+def generate_module_weights(history_df: pd.DataFrame, game_config: Dict[str, Any], draw_date: Optional[datetime] = None) -> Dict[str, Dict[int, float]]:
+    """
+    Génère les poids pour différents modules d'analyse.
+    
+    Args:
+        history_df: DataFrame contenant l'historique des tirages
+        game_config: Configuration du jeu
+        draw_date: Date du tirage (optionnel)
+        
+    Returns:
+        Dictionnaire des poids par module
+    """
+    try:
+        base_modules = {
+            'freq_nums': get_frequent_numbers({'data': history_df}, game_config)[0],
+            'pattern_nums': detect_repeating_patterns({'data': history_df}, game_config),
+            'lunar_cycle': apply_lunar_cycle_weight(get_frequent_numbers({'data': history_df}, game_config)[0], draw_date) if draw_date else {},
+            'positive_seq': detect_positive_sequences({'data': history_df}, game_config),
+            'fractal': detect_fractal_patterns({'data': history_df}, game_config),
+            'game_theory': game_theory_analysis({'data': history_df}, game_config),
+            'periodic_trends': evaluate_periodic_trends({'data': history_df}, game_config),
+            'bayesian': bayesian_adjustment(get_frequent_numbers({'data': history_df}, game_config)[0], {'data': history_df}),
+            'markov': markov_trend_prediction({'data': history_df}, game_config),
+            'neural_net': neural_network_weighting({'data': history_df}, game_config),
+            'anomalies': detect_anomalies({'data': history_df}, game_config),
+            'loto_opt': optimize_loto_weights({'data': history_df}, game_config),
+            'std_dev': analyze_standard_deviation({'data': history_df}, game_config),
+            'adaptive_prob': adaptive_probability_adjustment({'data': history_df}, game_config),
+            'evolutionary': evolutionary_algorithm_tuning({'data': history_df}, game_config),
+            'monte_carlo': monte_carlo_simulation({'data': history_df}, game_config),
+            'clustering': cluster_number_selection({'data': history_df}, game_config),
+            'long_term_cycles': detect_long_term_cycles({'data': history_df}, game_config),
+            'wavelet': wavelet_decomposition_trends({'data': history_df}, game_config),
+            'fft': fft_spectral_analysis({'data': history_df}, game_config)
+        }
+        
+        return base_modules
+        
+    except Exception as e:
+        logger.error(f"Erreur lors de la génération des poids: {e}")
+        return {}
 
-    def smart_draw(pool, *weight_maps, count):
-        """Effectue un tirage pondéré basé sur divers modèles."""
-        weights = [np.prod([wm.get(n, 1) for wm in weight_maps]) for n in pool]
-        weights = np.array(weights) / np.sum(weights)
-        return sorted(random.choices(pool, weights=weights, k=count))
-
-    # Application du tirage optimisé
-    nums = smart_draw(
-        game_config['pool'], adjusted_freq, pattern_nums, positive_bias, fractal_bonus,
-        game_theory_weights, period_trends, bayesian_weights, markov_predictions,
-        neural_weights, anomaly_correction, loto_adjustments, std_dev_analysis,
-        probability_adjustment, evolutionary_tuning, monte_carlo_results, clustered_numbers,
-        long_term_cycles, count=game_config['numbers']
-    )
-    stars = smart_draw(
-        game_config['stars_pool'], frequent_stars, set(), count=game_config['stars']
-    ) if game_config['stars'] > 0 else []
-
-    return {'numbers': nums, 'stars': stars}
+def generate_model_optimized_grid(game_config: Dict[str, Any], history_df: pd.DataFrame, draw_date: Optional[datetime] = None) -> List[int]:
+    """
+    Génère une grille optimisée en utilisant plusieurs modèles.
+    
+    Args:
+        game_config: Configuration du jeu
+        history_df: DataFrame contenant l'historique des tirages
+        draw_date: Date du tirage (optionnel)
+        
+    Returns:
+        Liste des numéros optimisés
+    """
+    try:
+        # Récupération des poids de différents modules
+        weights = generate_module_weights(history_df, game_config, draw_date)
+        
+        # Combinaison des poids
+        combined_weights = combine_weights(weights)
+        
+        # Sélection des numéros avec les poids les plus élevés
+        sorted_nums = sorted(combined_weights.items(), key=lambda x: x[1], reverse=True)
+        selected_nums = [int(num) for num, _ in sorted_nums[:game_config['columns']]]
+        
+        # Ajout des numéros bonus si nécessaire
+        if game_config.get('bonus', 0) > 0:
+            bonus_nums = [int(num) for num, _ in sorted_nums[game_config['columns']:game_config['columns'] + game_config['bonus']]]
+            selected_nums.extend(bonus_nums)
+            
+        return selected_nums
+        
+    except Exception as e:
+        logger.error(f"Erreur lors de la génération de la grille optimisée: {e}")
+        return []
